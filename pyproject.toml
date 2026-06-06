@@ -1,0 +1,28 @@
+[project]
+name = "agent-vault"
+version = "0.1.0"
+description = "A small local encrypted vault for agent-safe secret usage."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=43.0.0",
+    "filelock>=3.15.0",
+    "keyring>=25.0.0",
+    "platformdirs>=4.2.0",
+]
+
+[project.scripts]
+agent-vault = "agent_vault.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
