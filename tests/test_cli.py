@@ -49,3 +49,24 @@ def test_delete_requires_explicit_yes(vault_home, fake_keyring, monkeypatch: pyt
     error = capsys.readouterr()
     assert "without --yes" in error.err
     assert "super-secret-value" not in error.err
+
+
+def test_entry_cli_lists_visible_metadata_without_secret_value(
+    vault_home, fake_keyring, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    assert main(["init"]) == 0
+    assert main(["entry", "set", "japan_server", "--description", "日本三网优化服务器", "--tag", "server"]) == 0
+    monkeypatch.setattr(sys, "stdin", io.StringIO("super-secret-value\n"))
+    assert main(["set", "japan_server_password", "--value-stdin", "--entry", "japan_server"]) == 0
+    capsys.readouterr()
+
+    assert main(["entry", "list"]) == 0
+    listed = capsys.readouterr()
+    assert "japan_server" in listed.out
+    assert "日本三网优化服务器" in listed.out
+    assert "super-secret-value" not in listed.out
+
+    assert main(["entry", "show", "japan_server"]) == 0
+    shown = capsys.readouterr()
+    assert "japan_server_password" in shown.out
+    assert "super-secret-value" not in shown.out

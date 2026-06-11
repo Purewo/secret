@@ -12,5 +12,6 @@ build/
 .vault/
 vault.enc
 vault.lock
+vault.key
 *.bak
 *.tmp

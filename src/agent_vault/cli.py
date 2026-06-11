@@ -34,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     set_parser.add_argument("name", help="Variable name, for example server_password.")
     set_parser.add_argument("--note", default="", help="Optional non-secret note.")
     set_parser.add_argument("--tag", action="append", default=[], help="Optional tag. Can be passed multiple times.")
+    set_parser.add_argument("--entry", help="Optional existing entry id.")
     set_parser.add_argument("--value-stdin", action="store_true", help="Read the secret value from stdin.")
     set_parser.set_defaults(func=cmd_set)
 
@@ -57,6 +58,27 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser = subparsers.add_parser("doctor", help="Check vault and credential status without printing secrets.")
     doctor_parser.set_defaults(func=cmd_doctor)
 
+    entry_parser = subparsers.add_parser("entry", help="Manage visible entries and metadata.")
+    entry_subparsers = entry_parser.add_subparsers(dest="entry_command", required=True)
+
+    entry_set_parser = entry_subparsers.add_parser("set", help="Create or update an entry.")
+    entry_set_parser.add_argument("entry_id", help="Stable entry id, for example japan_server.")
+    entry_set_parser.add_argument("--description", required=True, help="Visible non-secret entry description.")
+    entry_set_parser.add_argument("--tag", action="append", default=[], help="Visible tag. Can be passed multiple times.")
+    entry_set_parser.set_defaults(func=cmd_entry_set)
+
+    entry_list_parser = entry_subparsers.add_parser("list", help="List all entries and visible descriptions.")
+    entry_list_parser.set_defaults(func=cmd_entry_list)
+
+    entry_show_parser = entry_subparsers.add_parser("show", help="Show entry metadata and variable names.")
+    entry_show_parser.add_argument("entry_id", help="Entry id.")
+    entry_show_parser.set_defaults(func=cmd_entry_show)
+
+    entry_assign_parser = entry_subparsers.add_parser("assign", help="Assign existing secrets to an entry.")
+    entry_assign_parser.add_argument("entry_id", help="Entry id.")
+    entry_assign_parser.add_argument("names", nargs="+", help="Existing secret variable names.")
+    entry_assign_parser.set_defaults(func=cmd_entry_assign)
+
     return parser
 
 
@@ -70,7 +92,7 @@ def cmd_init(_args: argparse.Namespace) -> int:
 
 def cmd_set(args: argparse.Namespace) -> int:
     value = _read_secret(args.name, args.value_stdin)
-    record = Vault().set_secret(args.name, value, note=args.note, tags=args.tag)
+    record = Vault().set_secret(args.name, value, note=args.note, tags=args.tag, entry=args.entry)
     print(f"Saved {record['name']}.")
     return 0
 
@@ -131,6 +153,51 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
     if diagnostics.error:
         print(f"error: {diagnostics.error}")
         return 1
+    return 0
+
+
+def cmd_entry_set(args: argparse.Namespace) -> int:
+    entry = Vault().set_entry(args.entry_id, args.description, tags=args.tag)
+    print(f"Saved entry {entry['id']}.")
+    return 0
+
+
+def cmd_entry_list(_args: argparse.Namespace) -> int:
+    entries = Vault().list_entries()
+    if not entries:
+        print("No entries.")
+        return 0
+
+    for entry in entries:
+        tags = ",".join(entry.get("tags", [])) or "-"
+        description = _one_line(entry["description"])
+        print(
+            f"{entry['id']}\tsecrets={entry['secret_count']}\t"
+            f"tags={tags}\tdescription={description}"
+        )
+    return 0
+
+
+def cmd_entry_show(args: argparse.Namespace) -> int:
+    entry = Vault().get_entry(args.entry_id)
+    tags = ",".join(entry.get("tags", [])) or "-"
+    print(f"id: {entry['id']}")
+    print(f"description: {_one_line(entry['description'])}")
+    print(f"tags: {tags}")
+    print(f"updated: {entry['updated_at']}")
+    print("variables:")
+    if not entry["records"]:
+        print("  (none)")
+        return 0
+    for record in entry["records"]:
+        note = _one_line(record.get("note", "")) or "-"
+        print(f"  {record['name']}\tnote={note}")
+    return 0
+
+
+def cmd_entry_assign(args: argparse.Namespace) -> int:
+    records = Vault().assign_entry(args.entry_id, args.names)
+    print(f"Assigned {len(records)} variable(s) to {args.entry_id}.")
     return 0
 
 

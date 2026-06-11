@@ -17,8 +17,10 @@ APP_NAME = "AgentVault"
 KEYRING_SERVICE = "agent-vault"
 KEYRING_USERNAME = "vault-data-key"
 VAULT_HOME_ENV = "AGENT_VAULT_HOME"
+KEY_FILE_NAME = "vault.key"
 VAULT_VERSION = 1
 NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+ENTRY_ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]*\Z")
 
 
 class VaultError(Exception):
@@ -52,11 +54,22 @@ def validate_name(name: str) -> str:
     return name
 
 
+def validate_entry_id(entry_id: str) -> str:
+    if not ENTRY_ID_PATTERN.fullmatch(entry_id):
+        raise VaultError("Invalid entry id. Use [A-Za-z][A-Za-z0-9_-]*.")
+    return entry_id
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
 class Vault:
     def __init__(self, home: Path | None = None) -> None:
         self.home = Path(home) if home is not None else default_vault_home()
         self.path = self.home / "vault.enc"
         self.lock_path = self.home / "vault.lock"
+        self.key_path = self.home / KEY_FILE_NAME
 
     def init(self) -> bool:
         self.home.mkdir(parents=True, exist_ok=True)
@@ -70,11 +83,22 @@ class Vault:
             self._save_unlocked(self._empty_vault())
             return True
 
-    def set_secret(self, name: str, value: str, note: str = "", tags: list[str] | None = None) -> dict[str, Any]:
+    def set_secret(
+        self,
+        name: str,
+        value: str,
+        note: str = "",
+        tags: list[str] | None = None,
+        entry: str | None = None,
+    ) -> dict[str, Any]:
         name = validate_name(name)
+        if entry is not None:
+            entry = validate_entry_id(entry)
         with self._lock():
             data = self._load_unlocked()
             records = data["records"]
+            if entry is not None and entry not in data["entries"]:
+                raise VaultError(f"Entry '{entry}' not found. Run agent-vault entry set first.")
             conflict = self._case_conflict(records, name)
             if conflict is not None:
                 raise VaultError(
@@ -89,6 +113,7 @@ class Vault:
                 "value": value,
                 "note": note,
                 "tags": tags or [],
+                "entry": entry if entry is not None else previous.get("entry") if previous else None,
                 "created_at": previous.get("created_at", now) if previous else now,
                 "updated_at": now,
             }
@@ -133,6 +158,73 @@ class Vault:
             del data["records"][name]
             self._save_unlocked(data)
 
+    def set_entry(self, entry_id: str, description: str, tags: list[str] | None = None) -> dict[str, Any]:
+        entry_id = validate_entry_id(entry_id)
+        description = description.strip()
+        if not description:
+            raise VaultError("Entry description cannot be empty.")
+        with self._lock():
+            data = self._load_unlocked()
+            entries = data["entries"]
+            now = utc_now()
+            previous = entries.get(entry_id)
+            entries[entry_id] = {
+                "id": entry_id,
+                "description": description,
+                "tags": tags or [],
+                "created_at": previous.get("created_at", now) if previous else now,
+                "updated_at": now,
+            }
+            self._save_unlocked(data)
+            return dict(entries[entry_id])
+
+    def list_entries(self) -> list[dict[str, Any]]:
+        with self._lock():
+            data = self._load_unlocked()
+            counts = self._entry_counts(data["records"])
+            entries = []
+            for entry in data["entries"].values():
+                public = dict(entry)
+                public["secret_count"] = counts.get(entry["id"], 0)
+                entries.append(public)
+            return sorted(entries, key=lambda item: item["id"].lower())
+
+    def get_entry(self, entry_id: str) -> dict[str, Any]:
+        entry_id = validate_entry_id(entry_id)
+        with self._lock():
+            data = self._load_unlocked()
+            if entry_id not in data["entries"]:
+                raise VaultError(f"Entry '{entry_id}' not found.")
+            entry = dict(data["entries"][entry_id])
+            records = [
+                self._public_record(record)
+                for record in data["records"].values()
+                if record.get("entry") == entry_id
+            ]
+            entry["records"] = sorted(records, key=lambda item: item["name"].lower())
+            return entry
+
+    def assign_entry(self, entry_id: str, names: list[str]) -> list[dict[str, Any]]:
+        entry_id = validate_entry_id(entry_id)
+        if not names:
+            raise VaultError("At least one secret name is required.")
+        validated = [validate_name(name) for name in names]
+        with self._lock():
+            data = self._load_unlocked()
+            if entry_id not in data["entries"]:
+                raise VaultError(f"Entry '{entry_id}' not found. Run agent-vault entry set first.")
+            missing = [name for name in validated if name not in data["records"]]
+            if missing:
+                raise VaultError(f"Secret not found: {', '.join(missing)}")
+            now = utc_now()
+            assigned = []
+            for name in validated:
+                data["records"][name]["entry"] = entry_id
+                data["records"][name]["updated_at"] = now
+                assigned.append(self._public_record(data["records"][name]))
+            self._save_unlocked(data)
+            return assigned
+
     def diagnose(self) -> VaultDiagnostics:
         key_exists = False
         decryptable = False
@@ -155,29 +247,62 @@ class Vault:
 
     def _lock(self) -> FileLock:
         self.home.mkdir(parents=True, exist_ok=True)
+        if not _is_windows():
+            self.home.chmod(0o700)
         return FileLock(str(self.lock_path), timeout=10)
 
     def _read_data_key(self, create: bool) -> bytes | None:
+        keyring_error: Exception | None = None
         try:
             stored = keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
         except Exception as exc:  # keyring backend errors vary by platform/backend.
-            raise VaultError(f"Unable to read Windows credential: {exc}") from exc
+            keyring_error = exc
+            stored = None
 
-        if stored is None:
-            if not create:
-                raise VaultError("Vault key not found in Windows Credential Manager. Run agent-vault init.")
-            generated = Fernet.generate_key().decode("ascii")
+        if stored is not None:
+            return self._validate_data_key(stored)
+
+        if not _is_windows() and self.key_path.exists():
             try:
-                keyring.set_password(KEYRING_SERVICE, KEYRING_USERNAME, generated)
-            except Exception as exc:
-                raise VaultError(f"Unable to save Windows credential: {exc}") from exc
-            stored = generated
+                self.key_path.chmod(0o600)
+                return self._validate_data_key(self.key_path.read_text(encoding="ascii").strip())
+            except OSError as exc:
+                raise VaultError(f"Unable to read fallback key file: {exc}") from exc
 
-        key = stored.encode("ascii")
+        if not create:
+            if _is_windows() and keyring_error is not None:
+                raise VaultError(f"Unable to read Windows Credential Manager: {keyring_error}") from keyring_error
+            raise VaultError("Vault key not found in the credential store or fallback key file. Run agent-vault init.")
+
+        generated = Fernet.generate_key().decode("ascii")
+        try:
+            keyring.set_password(KEYRING_SERVICE, KEYRING_USERNAME, generated)
+            return self._validate_data_key(generated)
+        except Exception as exc:
+            keyring_error = exc
+
+        if not _is_windows():
+            try:
+                self.home.mkdir(parents=True, exist_ok=True)
+                self.home.chmod(0o700)
+                self.key_path.write_text(generated, encoding="ascii")
+                self.key_path.chmod(0o600)
+                return self._validate_data_key(generated)
+            except OSError as exc:
+                raise VaultError(f"Unable to save fallback key file: {exc}") from exc
+
+        raise VaultError(f"Unable to save key in Windows Credential Manager: {keyring_error}") from keyring_error
+
+    @staticmethod
+    def _validate_data_key(stored: str) -> bytes:
+        try:
+            key = stored.encode("ascii")
+        except (AttributeError, UnicodeEncodeError) as exc:
+            raise VaultError("Vault key is invalid.") from exc
         try:
             Fernet(key)
         except Exception as exc:
-            raise VaultError("Vault key in Windows Credential Manager is invalid.") from exc
+            raise VaultError("Vault key is invalid.") from exc
         return key
 
     def _load_unlocked(self) -> dict[str, Any]:
@@ -190,12 +315,19 @@ class Vault:
             raw = Fernet(key).decrypt(encrypted)
             data = json.loads(raw.decode("utf-8"))
         except InvalidToken as exc:
-            raise VaultError("Vault cannot be decrypted with the current Windows credential.") from exc
+            raise VaultError("Vault cannot be decrypted with the current vault key.") from exc
         except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise VaultError(f"Vault file is unreadable: {exc}") from exc
 
         if data.get("version") != VAULT_VERSION or not isinstance(data.get("records"), dict):
             raise VaultError("Vault file has an unsupported format.")
+        if not isinstance(data.get("entries", data.get("projects", {})), dict):
+            raise VaultError("Vault file has an unsupported entry format.")
+        if "entries" not in data:
+            data["entries"] = data.pop("projects", {})
+        for record in data["records"].values():
+            if "entry" not in record and "project" in record:
+                record["entry"] = record.pop("project")
         return data
 
     def _save_unlocked(self, data: dict[str, Any]) -> None:
@@ -213,7 +345,7 @@ class Vault:
     @staticmethod
     def _empty_vault() -> dict[str, Any]:
         now = utc_now()
-        return {"version": VAULT_VERSION, "created_at": now, "updated_at": now, "records": {}}
+        return {"version": VAULT_VERSION, "created_at": now, "updated_at": now, "records": {}, "entries": {}}
 
     @staticmethod
     def _case_conflict(records: dict[str, Any], name: str) -> str | None:
@@ -224,4 +356,13 @@ class Vault:
 
     @staticmethod
     def _public_record(record: dict[str, Any]) -> dict[str, Any]:
-        return {key: value for key, value in record.items() if key != "value"}
+        return {key: value for key, value in record.items() if key != "value" and value is not None}
+
+    @staticmethod
+    def _entry_counts(records: dict[str, Any]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for record in records.values():
+            entry = record.get("entry")
+            if entry:
+                counts[entry] = counts.get(entry, 0) + 1
+        return counts

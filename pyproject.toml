@@ -1,9 +1,9 @@
 [project]
 name = "agent-vault"
-version = "0.1.0"
+version = "0.2.0"
 description = "A small local encrypted vault for agent-safe secret usage."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "cryptography>=43.0.0",
     "filelock>=3.15.0",
