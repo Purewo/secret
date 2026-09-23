@@ -64,7 +64,7 @@ class ApiKeyStore:
         with self._lock(), self._connect() as connection:
             connection.execute(
                 "INSERT INTO api_keys(id,name,note,prefix,encrypted_value,key_hash,permissions,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                (key_id, name, note, raw_key[:12], self._encrypt(raw_key), hashlib.sha256(raw_key.encode("utf-8")).hexdigest(), '{"categories":[],"read":false,"add":false,"delete":false}', now, now),
+                (key_id, name, note, raw_key[:12], self._encrypt(raw_key), hashlib.sha256(raw_key.encode("utf-8")).hexdigest(), '{"categories":[],"read":false,"add":false,"delete":false,"skill_categories":[]}', now, now),
             )
             public = self._public(connection.execute("SELECT * FROM api_keys WHERE id = ?", (key_id,)).fetchone())
         public["api_key"] = raw_key
@@ -116,11 +116,15 @@ class ApiKeyStore:
         categories = permissions.get("categories", [])
         if not isinstance(categories, list) or not all(isinstance(category, str) for category in categories):
             raise VaultError("Permission categories must be a string array.")
+        skill_categories = permissions.get("skill_categories", [])
+        if not isinstance(skill_categories, list) or not all(isinstance(category, str) for category in skill_categories):
+            raise VaultError("Skill permission categories must be a string array.")
         normalized = {
             "categories": sorted(set(categories)),
             "read": bool(permissions.get("read", False)),
             "add": bool(permissions.get("add", False)),
             "delete": bool(permissions.get("delete", False)),
+            "skill_categories": sorted(set(skill_categories)),
         }
         with self._lock(), self._connect() as connection:
             row = connection.execute("SELECT * FROM api_keys WHERE id = ?", (key_id,)).fetchone()
@@ -200,9 +204,11 @@ class ApiKeyStore:
         try:
             permissions = json.loads(row["permissions"])
         except (TypeError, ValueError):
-            permissions = {"categories": [], "read": False, "add": False, "delete": False}
+            permissions = {"categories": [], "read": False, "add": False, "delete": False, "skill_categories": []}
         if permissions == ["admin"]:
-            permissions = {"categories": ["__all__"], "read": True, "add": True, "delete": True}
+            permissions = {"categories": ["__all__"], "read": True, "add": True, "delete": True, "skill_categories": []}
+        if isinstance(permissions, dict):
+            permissions.setdefault("skill_categories", [])
         return {
             "id": row["id"], "name": row["name"], "note": row["note"], "prefix": row["prefix"],
             "permissions": permissions, "created_at": row["created_at"], "updated_at": row["updated_at"],

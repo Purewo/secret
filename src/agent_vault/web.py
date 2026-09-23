@@ -16,9 +16,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Sequence
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from .api_keys import ApiKeyStore
+from .skill_store import MAX_PACKAGE_BYTES, SkillAccessError, SkillStore
 from .storage import Vault, VaultError, utc_now
 
 DEFAULT_HOST = "127.0.0.1"
@@ -162,6 +163,8 @@ class VaultWebServer(ThreadingHTTPServer):
     ) -> None:
         self.vault = vault
         self.api_keys = api_keys
+        self.skills = SkillStore(vault.home)
+        self.skills.init()
         self.auth_store = WebAuthStore(vault.home, username, password)
         self.username = self.auth_store.username
         self.sessions: dict[str, WebSession] = {}
@@ -273,11 +276,34 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 self._require_admin_session()
                 self._send_json(HTTPStatus.OK, {"api_keys": self.server.api_keys.list()})
                 return
+            if path in ("/api/skills/categories", "/api/v1/skills/categories"):
+                allowed = self._skill_access(path)
+                self._send_json(HTTPStatus.OK, {"categories": self.server.skills.categories(allowed)})
+                return
+            if path in ("/api/skills", "/api/v1/skills"):
+                allowed = self._skill_access(path)
+                category = parse_qs(urlsplit(self.path).query).get("category", [None])[0]
+                self._send_json(HTTPStatus.OK, {"skills": self.server.skills.list_skills(category, allowed)})
+                return
+            if path.startswith(("/api/skills/", "/api/v1/skills/")):
+                allowed = self._skill_access(path)
+                tail = path.split("/skills/", 1)[1]
+                parts = [unquote(part) for part in tail.split("/")]
+                if len(parts) == 4 and parts[1] == "versions" and parts[3] == "download":
+                    archive, digest = self.server.skills.download(parts[0], parts[2], allowed)
+                    self._send_skill_file(archive, digest)
+                    return
+                if len(parts) == 1 and parts[0]:
+                    self._send_json(HTTPStatus.OK, {"skill": self.server.skills.detail(parts[0], allowed)})
+                    return
+                raise ApiError(HTTPStatus.NOT_FOUND, "接口不存在。")
             if path.startswith("/api/"):
                 raise ApiError(HTTPStatus.NOT_FOUND, "接口不存在。")
             self._serve_static(path)
         except ApiError as exc:
             self._send_json(exc.status, {"error": exc.message})
+        except SkillAccessError as exc:
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": str(exc)})
         except VaultError as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except BrokenPipeError:
@@ -375,8 +401,43 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 self._require_session_from_principal(principal)
                 key_id = path[len("/api/api-keys/") : -len("/permissions")].strip("/")
                 payload = self._read_json()
+                valid_skill_categories = {category["id"] for category in self.server.skills.categories()}
+                if any(category not in valid_skill_categories for category in payload.get("skill_categories", []) if isinstance(category, str)):
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "包含不存在的 Skill 分类。")
                 updated = self.server.api_keys.update_permissions(key_id, payload)
                 self._send_json(HTTPStatus.OK, {"api_key": updated})
+                return
+            if path == "/api/skills/categories":
+                self._require_session_from_principal(principal)
+                payload = self._read_json()
+                category = self.server.skills.add_category(
+                    self._required_string(payload, "id", max_length=80),
+                    self._required_string(payload, "name", max_length=40),
+                )
+                self._send_json(HTTPStatus.CREATED, {"category": category})
+                return
+            if path == "/api/skills/upload":
+                self._require_session_from_principal(principal)
+                if self.headers.get("Content-Type", "").split(";", 1)[0].lower() != "application/zip":
+                    raise ApiError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "请上传 ZIP 压缩包。")
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError as exc:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "上传长度无效。") from exc
+                if length <= 0 or length > MAX_PACKAGE_BYTES:
+                    raise ApiError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Skill 压缩包最大 25 MB。")
+                query = parse_qs(urlsplit(self.path).query)
+                value = lambda key, default="": query.get(key, [default])[0]
+                environment = value("environment", "auto")
+                if environment not in ("auto", "yes", "no"):
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "环境依赖选项无效。")
+                created = self.server.skills.upload(
+                    self.rfile, length, name=value("name"), description=value("description"),
+                    version=value("version"), category=value("category", "__other__"),
+                    skill_id=value("skill_id") or None, environment_note=value("environment_note"),
+                    requires_environment=None if environment == "auto" else environment == "yes",
+                )
+                self._send_json(HTTPStatus.CREATED, {"skill": created})
                 return
             if path == "/api/entries":
                 self._require_session_from_principal(principal)
@@ -711,6 +772,18 @@ class VaultWebHandler(BaseHTTPRequestHandler):
         principal = self._require_principal()
         return self._require_session_from_principal(principal)
 
+    def _skill_access(self, path: str) -> set[str] | None:
+        principal = self._require_principal()
+        if principal.kind == "session":
+            return None
+        if not path.startswith("/api/v1/skills"):
+            raise ApiError(HTTPStatus.FORBIDDEN, "API Key 只能使用 Skill 查询接口。")
+        permissions = (principal.api_key or {}).get("permissions", {})
+        allowed = set(permissions.get("skill_categories", [])) if isinstance(permissions, dict) else set()
+        if not allowed:
+            raise ApiError(HTTPStatus.FORBIDDEN, "API Key 未授权任何 Skill 分类。")
+        return allowed
+
     @staticmethod
     def _require_session_from_principal(principal: RequestPrincipal) -> WebSession:
         if principal.kind != "session" or principal.session is None:
@@ -848,6 +921,19 @@ class VaultWebHandler(BaseHTTPRequestHandler):
         name, content_type = asset
         data = files("agent_vault.web_static").joinpath(name).read_bytes()
         self._send_bytes(HTTPStatus.OK, data, content_type)
+
+    def _send_skill_file(self, path: Path, digest: str) -> None:
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Length", str(path.stat().st_size))
+        self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+        self.send_header("X-Content-SHA256", digest)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        with path.open("rb") as archive:
+            while block := archive.read(1024 * 1024):
+                self.wfile.write(block)
 
     def _send_json(self, status: int, payload: dict[str, Any], cookie: str | None = None) -> None:
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

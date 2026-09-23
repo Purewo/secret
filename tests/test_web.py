@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import http.client
+import io
 import json
 import threading
+import urllib.parse
+import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
 from agent_vault.storage import Vault
+from agent_vault.client import SyncClient, SyncClientError
 from agent_vault.web import DEFAULT_PORT, build_server
 
 
@@ -65,8 +69,110 @@ def login(address: tuple[str, int]) -> tuple[str, str]:
     return cookie, payload["csrf_token"]
 
 
+def skill_zip() -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("example/SKILL.md", "---\nname: example\n---\n# Example\n")
+        archive.writestr("example/scripts/run.py", "print('hello')\n")
+    return buffer.getvalue()
+
+
+def upload_skill(address: tuple[str, int], cookie: str, csrf: str, archive: bytes, **fields: str):
+    query = urllib.parse.urlencode(fields)
+    connection = http.client.HTTPConnection(*address, timeout=5)
+    connection.request("POST", f"/api/skills/upload?{query}", body=archive, headers={
+        "Content-Type": "application/zip", "Cookie": cookie, "X-CSRF-Token": csrf,
+    })
+    response = connection.getresponse()
+    result = response.status, json.loads(response.read().decode("utf-8"))
+    connection.close()
+    return result
+
+
 def test_default_web_port_is_2001() -> None:
     assert DEFAULT_PORT == 2001
+
+
+def test_skill_repository_scope_metadata_and_download(vault_home, fake_keyring) -> None:
+    with running_web_server() as address:
+        cookie, csrf = login(address)
+        assert request_json(address, "POST", "/api/skills/categories", {"id": "documents", "name": "文档"}, cookie=cookie, csrf_token=csrf)[0] == 201
+        archive = skill_zip()
+        status, created = upload_skill(address, cookie, csrf, archive,
+                                       name="Doc Expert", description="Write polished documents", version="1.0.0", category="documents")
+        assert status == 201
+        skill = created["skill"]
+        assert skill["versions"][0]["requires_environment"] is True
+        assert skill["versions"][0]["download_count"] == 0
+        assert skill["versions"][0]["size_bytes"] == len(archive)
+        assert skill["versions"][0]["download_url"].endswith("/versions/1.0.0/download")
+        status, next_version = upload_skill(address, cookie, csrf, archive,
+                                            name="Doc Expert", description="Write polished documents", version="1.1.0",
+                                            category="documents", skill_id=skill["id"], environment="no")
+        assert status == 201
+        assert [item["version"] for item in next_version["skill"]["versions"]] == ["1.1.0", "1.0.0"]
+        assert next_version["skill"]["versions"][0]["requires_environment"] is False
+        assert upload_skill(address, cookie, csrf, archive, name="Doc Expert", description="duplicate",
+                            version="1.1.0", category="documents", skill_id=skill["id"])[0] == 400
+        status, private_skill = upload_skill(address, cookie, csrf, archive,
+                                             name="Other Skill", description="Different category", version="1.0.0")
+        assert status == 201
+
+        status, key_payload, _ = request_json(address, "POST", "/api/api-keys", {"name": "skill-agent"}, cookie=cookie, csrf_token=csrf)
+        assert status == 201
+        key = key_payload["api_key"]
+        auth = f"Bearer {key['api_key']}"
+        assert request_json(address, "GET", "/api/v1/skills/categories", authorization=auth)[0] == 403
+        assert request_json(address, "POST", f"/api/api-keys/{key['id']}/permissions",
+                            {"categories": [], "read": False, "add": False, "delete": False, "skill_categories": ["documents"]},
+                            cookie=cookie, csrf_token=csrf)[0] == 200
+        status, categories, _ = request_json(address, "GET", "/api/v1/skills/categories", authorization=auth)
+        assert status == 200
+        assert [item["id"] for item in categories["categories"]] == ["documents"]
+        status, listed, _ = request_json(address, "GET", "/api/v1/skills?category=documents", authorization=auth)
+        assert status == 200 and listed["skills"][0]["name"] == "Doc Expert"
+        assert request_json(address, "GET", "/api/v1/skills?category=__other__", authorization=auth)[0] == 403
+        assert request_json(address, "GET", "/api/v1/skills", authorization=auth)[1]["skills"][0]["id"] == skill["id"]
+        assert len(request_json(address, "GET", "/api/v1/skills", authorization=auth)[1]["skills"]) == 1
+        assert request_json(address, "GET", f"/api/v1/skills/{private_skill['skill']['id']}", authorization=auth)[0] == 403
+        assert request_json(address, "GET", private_skill["skill"]["versions"][0]["download_url"], authorization=auth)[0] == 403
+        status, detail, _ = request_json(address, "GET", f"/api/v1/skills/{skill['id']}", authorization=auth)
+        assert status == 200 and detail["skill"]["versions"][0]["version"] == "1.1.0"
+        connection = http.client.HTTPConnection(*address, timeout=5)
+        connection.request("GET", detail["skill"]["versions"][1]["download_url"], headers={"Authorization": auth})
+        response = connection.getresponse()
+        assert response.status == 200
+        assert response.read() == archive
+        connection.close()
+        status, detail, _ = request_json(address, "GET", f"/api/v1/skills/{skill['id']}", authorization=auth)
+        assert detail["skill"]["versions"][1]["download_count"] == 1
+        assert request_json(address, "GET", "/api/v1/sync/pull", authorization=auth)[0] == 403
+
+        client = SyncClient(vault_home / "agent-client")
+        client.configure(f"http://{address[0]}:{address[1]}", key["api_key"])
+        assert [item["id"] for item in client.skill_categories()["categories"]] == ["documents"]
+        assert client.list_skills("documents")["skills"][0]["id"] == skill["id"]
+        output = vault_home / "downloaded-skill.zip"
+        result = client.download_skill(skill["id"], "1.0.0", output)
+        assert result["version"] == "1.0.0"
+        assert output.read_bytes() == archive
+        try:
+            client.download_skill(skill["id"], "1.0.0", output)
+        except SyncClientError as exc:
+            assert "already exists" in str(exc)
+        else:
+            assert False, "existing download must not be overwritten"
+
+
+def test_skill_upload_rejects_unsafe_archive(vault_home, fake_keyring) -> None:
+    with running_web_server() as address:
+        cookie, csrf = login(address)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("../SKILL.md", "# Unsafe\n")
+        status, payload = upload_skill(address, cookie, csrf, buffer.getvalue(), name="Unsafe", description="Unsafe path", version="1.0.0")
+        assert status == 400
+        assert "不安全" in payload["error"]
 
 
 def test_web_shell_has_security_headers(vault_home, fake_keyring) -> None:
@@ -327,7 +433,7 @@ def test_api_key_is_separate_and_bearer_can_use_content_api(vault_home, fake_key
         status, listed, _ = request_json(address, "GET", "/api/api-keys", cookie=cookie)
         assert status == 200
         assert raw_key not in json.dumps(listed)
-        assert listed["api_keys"][0]["permissions"] == {"categories": [], "read": False, "add": False, "delete": False}
+        assert listed["api_keys"][0]["permissions"] == {"categories": [], "read": False, "add": False, "delete": False, "skill_categories": []}
 
         status, revealed, _ = request_json(
             address,

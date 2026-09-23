@@ -10,6 +10,11 @@ const state = {
   entryPageSize: 12,
   activeCategory: "__all__",
   apiKeys: [],
+  skills: [],
+  skillCategories: [],
+  activeSkillCategory: "__all__",
+  activeSkillId: null,
+  uploadSkillId: null,
   activePermissionKeyId: null,
   pendingApiKeyAction: null,
 };
@@ -19,6 +24,7 @@ const labels = {
   entries: "资源条目",
   secrets: "变量检索",
   apiKeys: "API 密钥",
+  skills: "Skill 仓库",
   settings: "设置",
 };
 
@@ -34,6 +40,11 @@ const apiKeyDialog = document.querySelector("#apiKeyDialog");
 const apiKeyRevealDialog = document.querySelector("#apiKeyRevealDialog");
 const apiKeyPermissionDialog = document.querySelector("#apiKeyPermissionDialog");
 const apiKeyActionDialog = document.querySelector("#apiKeyActionDialog");
+const skillCategoryDialog = document.querySelector("#skillCategoryDialog");
+const skillUploadDialog = document.querySelector("#skillUploadDialog");
+const skillDetailDialog = document.querySelector("#skillDetailDialog");
+const skillCategoryForm = document.querySelector("#skillCategoryForm");
+const skillUploadForm = document.querySelector("#skillUploadForm");
 const entryForm = document.querySelector("#entryForm");
 const secretForm = document.querySelector("#secretForm");
 const categoryCreateForm = document.querySelector("#categoryCreateForm");
@@ -94,6 +105,8 @@ function showLogin() {
   state.csrfToken = "";
   state.snapshot = null;
   state.apiKeys = [];
+  state.skills = [];
+  state.skillCategories = [];
   resetPasswordForm();
   loginForm.elements.password.value = "";
   loginError.textContent = "";
@@ -124,12 +137,16 @@ function setToday() {
 }
 
 async function loadSnapshot() {
-  const [snapshot, apiKeyPayload] = await Promise.all([
+  const [snapshot, apiKeyPayload, skillPayload, skillCategories] = await Promise.all([
     api("/api/snapshot"),
     api("/api/api-keys"),
+    api("/api/skills"),
+    api("/api/skills/categories"),
   ]);
   state.snapshot = snapshot;
   state.apiKeys = apiKeyPayload.api_keys || [];
+  state.skills = skillPayload.skills || [];
+  state.skillCategories = skillCategories.categories || [];
   renderSnapshot();
   if (!snapshot.status.ready) {
     toast("保险柜需要检查", "本地密钥或密文库状态异常。", "error");
@@ -145,6 +162,7 @@ function renderSnapshot() {
   document.querySelector("#navEntryCount").textContent = metrics.entries;
   document.querySelector("#navSecretCount").textContent = metrics.unassigned;
   document.querySelector("#navApiKeyCount").textContent = state.apiKeys.length;
+  document.querySelector("#navSkillCount").textContent = state.skills.length;
   document.querySelector("#lookupTotal").textContent = metrics.secrets;
   populateCategoryOptions(document.querySelector("#entryCategory"));
   populateCategoryOptions(document.querySelector("#detailCategorySelect"));
@@ -160,6 +178,7 @@ function renderSnapshot() {
   renderPaginatedEntries(entries);
   renderSecrets();
   renderApiKeys();
+  renderSkills();
   populateEntrySelect();
 }
 
@@ -516,7 +535,7 @@ function renderApiKeys() {
   if (!container) return;
   container.replaceChildren();
   if (!state.apiKeys.length) {
-    container.append(emptyState("还没有 API Key", "给受信任的 Agent 创建一把可撤销的管理员钥匙。", false, true));
+    container.append(emptyState("还没有 API Key", "给受信任的 Agent 创建一把可撤销的访问钥匙。", false, true));
     return;
   }
   state.apiKeys.forEach((record) => {
@@ -533,7 +552,7 @@ function renderApiKeys() {
     tokenValue.dataset.keyId = record.id;
     token.append(tokenValue);
 
-    const status = createElement("span", `api-key-status ${record.status === "revoked" ? "api-key-status--revoked" : ""}`.trim(), record.status === "revoked" ? "已撤销" : "管理员权限");
+    const status = createElement("span", `api-key-status ${record.status === "revoked" ? "api-key-status--revoked" : ""}`.trim(), record.status === "revoked" ? "已撤销" : "已启用");
     const actions = createElement("div", "api-key-actions");
     const reveal = createElement("button", "api-key-action", "显示");
     reveal.type = "button";
@@ -559,9 +578,9 @@ function renderApiKeys() {
 }
 
 function permissionLabel(permissions) {
-  if (!permissions || !permissions.read) return "无内容权限";
-  const label = permissions.add ? "可读 + 新增" : "只读";
-  return permissions.delete ? `${label} · 可删除` : label;
+  const content = !permissions?.read ? "无内容权限" : `${permissions.add ? "可读 + 新增" : "只读"}${permissions.delete ? " · 可删除" : ""}`;
+  const skills = permissions?.skill_categories?.length ? ` · Skill ${permissions.skill_categories.length} 类` : "";
+  return content + skills;
 }
 
 function openApiKeyPermissionDialog(record) {
@@ -584,6 +603,18 @@ function openApiKeyPermissionDialog(record) {
     categoryList.append(label);
   });
   document.querySelector("#apiPermissionDelete").checked = Boolean(permissions.delete);
+  const skillCategoryList = document.querySelector("#apiPermissionSkillCategoryList");
+  skillCategoryList.replaceChildren();
+  state.skillCategories.forEach((category) => {
+    const label = createElement("label", "permission-category-item");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.name = "skill_categories";
+    checkbox.value = category.id;
+    checkbox.checked = (permissions.skill_categories || []).includes(category.id);
+    label.append(checkbox, createElement("span", "", `${category.name} · ${category.skill_count} 个 Skill`));
+    skillCategoryList.append(label);
+  });
   document.querySelector("[data-api-permission-error]").textContent = "";
   apiKeyPermissionDialog.showModal();
 }
@@ -591,6 +622,97 @@ function openApiKeyPermissionDialog(record) {
 function closeApiKeyPermissionDialog() {
   state.activePermissionKeyId = null;
   if (apiKeyPermissionDialog.open) apiKeyPermissionDialog.close();
+}
+
+function formatSize(bytes) {
+  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderSkills() {
+  const strip = document.querySelector("#skillCategoryStrip");
+  const list = document.querySelector("#skillList");
+  strip.replaceChildren();
+  list.replaceChildren();
+  const categories = [{ id: "__all__", name: "全部", skill_count: state.skills.length }, ...state.skillCategories];
+  categories.forEach((category) => {
+    const button = createElement("button", `category-pill ${state.activeSkillCategory === category.id ? "is-active" : ""}`);
+    button.type = "button";
+    button.append(createElement("span", "", category.name), createElement("b", "", String(category.skill_count)));
+    button.setAttribute("aria-pressed", String(state.activeSkillCategory === category.id));
+    button.addEventListener("click", () => { state.activeSkillCategory = category.id; renderSkills(); });
+    strip.append(button);
+  });
+  const visible = state.skills.filter((skill) => state.activeSkillCategory === "__all__" || skill.category === state.activeSkillCategory);
+  if (!visible.length) {
+    const empty = createElement("div", "skill-empty glass");
+    empty.append(createElement("span", "", "✦"), createElement("strong", "", "这个分类还没有 Skill"), createElement("p", "", "上传一个 ZIP 包，让你的能力开始流动。"));
+    list.append(empty);
+    return;
+  }
+  visible.forEach((skill) => {
+    const card = createElement("button", "skill-card glass");
+    card.type = "button";
+    const top = createElement("div", "skill-card__top");
+    top.append(createElement("span", "skill-card__glyph", "✦"), createElement("span", "skill-card__version", `v${skill.latest_version}`));
+    const name = createElement("h2", "", skill.name);
+    const description = createElement("p", "", skill.description);
+    const foot = createElement("div", "skill-card__foot");
+    const category = state.skillCategories.find((item) => item.id === skill.category)?.name || "其他";
+    foot.append(createElement("span", "", category), createElement("span", "", formatSize(skill.size_bytes)));
+    card.append(top, name, description, foot);
+    card.addEventListener("click", () => openSkillDetail(skill.id));
+    list.append(card);
+  });
+}
+
+function populateSkillCategorySelect() {
+  const select = document.querySelector("#skillUploadCategory");
+  select.replaceChildren();
+  state.skillCategories.forEach((category) => select.append(new Option(category.name, category.id)));
+  select.value = state.activeSkillCategory === "__all__" ? "__other__" : state.activeSkillCategory;
+}
+
+function openSkillUpload(skill = null) {
+  skillUploadForm.reset();
+  clearFormError(skillUploadForm);
+  state.uploadSkillId = skill?.id || null;
+  populateSkillCategorySelect();
+  if (skill) {
+    skillUploadForm.elements.name.value = skill.name;
+    skillUploadForm.elements.description.value = skill.description;
+    skillUploadForm.elements.category.value = skill.category;
+    skillUploadForm.elements.version.value = "";
+    skillDetailDialog.close();
+  }
+  skillUploadDialog.showModal();
+}
+
+async function openSkillDetail(id) {
+  try {
+    const { skill } = await api(`/api/skills/${encodeURIComponent(id)}`);
+    state.activeSkillId = id;
+    document.querySelector("#skillDetailName").textContent = skill.name;
+    const body = document.querySelector("#skillDetailBody");
+    body.replaceChildren();
+    body.append(createElement("p", "skill-detail-copy", skill.description));
+    skill.versions.forEach((version) => {
+      const row = createElement("div", "skill-version-row");
+      const info = createElement("div");
+      info.append(createElement("strong", "", `v${version.version}`), createElement("small", "", `上传 ${formatDate(version.uploaded_at)} · ${formatSize(version.size_bytes)} · 下载 ${version.download_count} 次`));
+      info.append(createElement("small", "", version.requires_environment ? `需要额外环境${version.environment_note ? `：${version.environment_note}` : ""}` : "开箱即用"));
+      const hash = createElement("small", "skill-version-hash", `SHA-256 ${version.sha256}`);
+      hash.title = version.sha256;
+      info.append(hash);
+      const download = createElement("a", "skill-download", "下载 ZIP ↓");
+      download.href = version.download_url;
+      download.download = `${skill.name}-${version.version}.zip`;
+      row.append(info, download);
+      body.append(row);
+    });
+    skillDetailDialog.showModal();
+  } catch (error) {
+    toast("获取 Skill 详情失败", error.message, "error");
+  }
 }
 
 async function revealApiKey(record, tokenElement, button) {
@@ -1083,8 +1205,10 @@ apiKeyPermissionForm.addEventListener("submit", async (event) => {
   errorRegion.textContent = "";
   const level = apiKeyPermissionForm.querySelector("input[name='level']:checked")?.value || "none";
   const categories = [...apiKeyPermissionForm.querySelectorAll("input[name='categories']:checked")].map((input) => input.value);
+  const skillCategories = [...apiKeyPermissionForm.querySelectorAll("input[name='skill_categories']:checked")].map((input) => input.value);
   const permissions = {
     categories,
+    skill_categories: skillCategories,
     read: level !== "none",
     add: level === "add",
     delete: document.querySelector("#apiPermissionDelete").checked,
@@ -1104,6 +1228,75 @@ apiKeyPermissionForm.addEventListener("submit", async (event) => {
   } finally {
     setLoading(button, false);
   }
+});
+
+document.querySelector("#skillUploadOpen").addEventListener("click", () => openSkillUpload());
+document.querySelector("#skillCategoryOpen").addEventListener("click", () => {
+  skillCategoryForm.reset();
+  skillCategoryForm.elements.id.value = `category_${Math.random().toString(36).slice(2, 10)}`;
+  clearFormError(skillCategoryForm);
+  skillCategoryDialog.showModal();
+});
+document.querySelector("#skillUploadVersion").addEventListener("click", async () => {
+  if (!state.activeSkillId) return;
+  try {
+    const { skill } = await api(`/api/skills/${encodeURIComponent(state.activeSkillId)}`);
+    openSkillUpload(skill);
+  } catch (error) { toast("打开上传失败", error.message, "error"); }
+});
+document.querySelectorAll("[data-close-skill-dialog]").forEach((button) => button.addEventListener("click", () => button.closest("dialog").close()));
+
+skillCategoryForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  clearFormError(skillCategoryForm);
+  if (!skillCategoryForm.reportValidity()) return;
+  const button = skillCategoryForm.querySelector("button[type='submit']");
+  setLoading(button, true);
+  try {
+    const { category } = await api("/api/skills/categories", { method: "POST", body: JSON.stringify({
+      id: skillCategoryForm.elements.id.value.trim(), name: skillCategoryForm.elements.name.value.trim(),
+    }) });
+    skillCategoryDialog.close();
+    state.activeSkillCategory = category.id;
+    await loadSnapshot();
+    toast("分类已创建", category.name);
+  } catch (error) { showFormError(skillCategoryForm, error.message); }
+  finally { setLoading(button, false); }
+});
+
+skillUploadForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  clearFormError(skillUploadForm);
+  if (!skillUploadForm.reportValidity()) return;
+  const file = skillUploadForm.elements.package.files[0];
+  if (!file || !file.name.toLowerCase().endsWith(".zip") || file.size > 25 * 1024 * 1024) {
+    showFormError(skillUploadForm, "请选择不超过 25 MB 的 ZIP 文件。");
+    return;
+  }
+  const button = skillUploadForm.querySelector("button[type='submit']");
+  setLoading(button, true);
+  const query = new URLSearchParams({
+    name: skillUploadForm.elements.name.value.trim(),
+    description: skillUploadForm.elements.description.value.trim(),
+    version: skillUploadForm.elements.version.value.trim(),
+    category: skillUploadForm.elements.category.value,
+    environment: skillUploadForm.elements.environment.value,
+    environment_note: skillUploadForm.elements.environment_note.value.trim(),
+  });
+  if (state.uploadSkillId) query.set("skill_id", state.uploadSkillId);
+  try {
+    const response = await fetch(`/api/skills/upload?${query}`, {
+      method: "POST", credentials: "same-origin", body: file,
+      headers: { "Content-Type": "application/zip", "X-CSRF-Token": state.csrfToken },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `上传失败（${response.status}）`);
+    skillUploadDialog.close();
+    state.uploadSkillId = null;
+    await loadSnapshot();
+    toast("Skill 已入库", `${payload.skill.name} · v${payload.skill.latest_version}`);
+  } catch (error) { showFormError(skillUploadForm, error.message); }
+  finally { setLoading(button, false); }
 });
 
 function resetPasswordForm() {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import hashlib
 import json
 import os
 import sys
@@ -118,6 +119,51 @@ class SyncClient:
         self._save_config(config)
         return response
 
+    def skill_categories(self) -> dict[str, Any]:
+        return self._request("GET", "/api/v1/skills/categories")
+
+    def list_skills(self, category: str | None = None) -> dict[str, Any]:
+        query = "?category=" + urllib.parse.quote(category, safe="") if category else ""
+        return self._request("GET", f"/api/v1/skills{query}")
+
+    def skill_info(self, skill_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/v1/skills/{urllib.parse.quote(skill_id, safe='')}")
+
+    def download_skill(self, skill_id: str, version: str | None = None, output: Path | None = None) -> dict[str, Any]:
+        detail = self.skill_info(skill_id)["skill"]
+        selected = next((item for item in detail["versions"] if item["version"] == version), None) if version else next(iter(detail["versions"]), None)
+        if selected is None:
+            raise SyncClientError("Requested Skill version was not found.")
+        destination = Path(output) if output is not None else Path.cwd() / f"{skill_id}-{selected['version']}.zip"
+        if destination.exists():
+            raise SyncClientError(f"File already exists: {destination}")
+        url = self._config_required()["base_url"] + selected["download_url"]
+        request = urllib.request.Request(url, method="GET")
+        request.add_header("Authorization", f"Bearer {self._api_key()}")
+        digest = hashlib.sha256()
+        created = False
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with urllib.request.urlopen(request, timeout=120) as response, destination.open("xb") as target:
+                created = True
+                while block := response.read(1024 * 1024):
+                    target.write(block)
+                    digest.update(block)
+            if digest.hexdigest() != selected["sha256"]:
+                destination.unlink(missing_ok=True)
+                raise SyncClientError("Skill package checksum mismatch.")
+        except urllib.error.HTTPError as exc:
+            try:
+                message = json.loads(exc.read().decode("utf-8")).get("error", f"HTTP {exc.code}")
+            except (OSError, json.JSONDecodeError):
+                message = f"HTTP {exc.code}"
+            raise SyncClientError(message) from exc
+        except OSError as exc:
+            if created:
+                destination.unlink(missing_ok=True)
+            raise SyncClientError(f"Skill download failed: {exc}") from exc
+        return {"skill_id": skill_id, "version": selected["version"], "path": str(destination), "sha256": digest.hexdigest()}
+
     def _config(self) -> dict[str, Any]:
         if not self.config_path.exists():
             return {}
@@ -174,6 +220,17 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("pull", help="Pull permitted remote data into the local vault.")
     push = sub.add_parser("push-entry", help="Push one local entry to the remote vault.")
     push.add_argument("entry_id")
+    skills = sub.add_parser("skills", help="Browse or download permitted Skills without synchronizing packages.")
+    skill_sub = skills.add_subparsers(dest="skill_command", required=True)
+    skill_sub.add_parser("categories", help="List permitted Skill categories.")
+    skill_list = skill_sub.add_parser("list", help="List permitted Skills.")
+    skill_list.add_argument("--category")
+    skill_info = skill_sub.add_parser("info", help="Show one Skill's versions and dependency notes.")
+    skill_info.add_argument("skill_id")
+    skill_download = skill_sub.add_parser("download", help="Download one Skill ZIP and verify SHA-256.")
+    skill_download.add_argument("skill_id")
+    skill_download.add_argument("--version")
+    skill_download.add_argument("--out", type=Path)
     return parser
 
 
@@ -191,6 +248,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(client.pull(), ensure_ascii=False, indent=2))
         elif args.command == "push-entry":
             print(json.dumps(client.push_entry(args.entry_id), ensure_ascii=False, indent=2))
+        elif args.command == "skills":
+            if args.skill_command == "categories":
+                result = client.skill_categories()
+            elif args.skill_command == "list":
+                result = client.list_skills(args.category)
+            elif args.skill_command == "info":
+                result = client.skill_info(args.skill_id)
+            else:
+                result = client.download_skill(args.skill_id, args.version, args.out)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (SyncClientError, VaultError) as exc:
         print(f"error: {exc}", file=sys.stderr)

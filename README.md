@@ -59,18 +59,44 @@ uv run --no-sync python -m agent_vault.client push-entry japan_server
 
 客户端把 Base URL 写入本地 Client 配置，把 API Key 写入独立系统 keyring；本地拉取后的数据由本地保险柜负责读取和环境变量注入。同步失败时会返回服务端的具体原因，例如分类无权限、写入权限不足或版本冲突。
 
+## Skill 仓库
+
+Web 管理台的「Skill 仓库」页面可以新建分类并上传 Skill ZIP。每个 Skill 需要名称、简介和版本号；ZIP 的根目录或单一顶层目录必须包含非空 `SKILL.md`。同一个 Skill 可追加版本，旧版本保持可下载。服务端保存上传时间、下载次数、包大小、SHA-256 和运行环境提示；ZIP 上传上限为 25 MB，解压后上限为 100 MB。脚本文件会触发环境依赖提示，也可以在上传时手动指定。
+
+Skill 的元数据保存在独立的 `Skills/skills.db`，原包保存在 `Skills/packages/`。它们不写入保险柜内容数据库，也不随 `agent-vault-client pull` 同步。管理员可在 API Key 权限管理中单独勾选开放的 Skill 分类；默认不开放任何分类。
+
+Agent 使用 Bearer API Key 分步查询和下载：
+
+```text
+GET /api/v1/skills/categories
+GET /api/v1/skills?category=documents
+GET /api/v1/skills/{skill_id}
+GET /api/v1/skills/{skill_id}/versions/{version}/download
+```
+
+详情返回 `download_url` 相对路径。下载时仍需发送 `Authorization: Bearer ...`，不要把 API Key 拼进下载 URL。浏览器管理员会话可直接从 Skill 详情下载 ZIP。
+
+已配置的本地客户端也可以按需浏览或下载，下载时会验证 SHA-256；Skill 包不会在普通 `pull` 中自动同步：
+
+```powershell
+agent-vault-client skills categories
+agent-vault-client skills list --category documents
+agent-vault-client skills info SKILL_ID
+agent-vault-client skills download SKILL_ID --version 1.0.0 --out .\my-skill.zip
+```
+
 存储上，内容数据使用 SQLite `vault.db`，秘密值仍由 Fernet 加密；API Key 使用独立的 `ApiKeys/api_keys.db` 和独立系统 keyring 密钥，绝不写入内容数据库。首次启动 SQLite 后会从旧 `vault.enc` 自动迁移，旧文件会保留作为迁移来源。
 
 Linux 上也可以直接用 `uv` 安装最新发布版 wheel：
 
 ```bash
-uv tool install https://github.com/Purewo/secret/releases/download/v0.3.1/agent_vault-0.3.1-py3-none-any.whl
+uv tool install https://github.com/Purewo/secret/releases/download/v0.4.0/agent_vault-0.4.0-py3-none-any.whl
 agent-vault init
 ```
 
-`v0.3.1` 发布包同时包含命令行保险柜、Web 管理台和本地同步客户端，服务端部署与客户端安装使用同一个 wheel；服务端只需额外配置 systemd 或其他进程托管方式。
+`v0.4.0` 发布包同时包含命令行保险柜、Web 管理台和本地同步客户端，服务端部署与客户端安装使用同一个 wheel；服务端只需额外配置 systemd 或其他进程托管方式。
 
-面向 Codex / Claude 的 Windows Agent Vault Skill 也随 Release 提供，下载 `agent-vault-windows-skill-0.3.1.zip` 后，将其中的 `windows-agent-vault` 目录放入对应的 skills 目录即可。Skill 只包含调用规则和无凭据脚本，不包含任何本机保险柜数据。
+面向 Codex / Claude 的 Windows Agent Vault Skill 也随 Release 提供，下载 `agent-vault-windows-skill-0.4.0.zip` 后，将其中的 `windows-agent-vault` 目录放入对应的 skills 目录即可。Skill 只包含调用规则和无凭据脚本，不包含任何本机保险柜数据。
 
 最低支持 Python 3.10。
 

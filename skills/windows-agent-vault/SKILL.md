@@ -50,6 +50,19 @@ The child process receives the variable without the vault CLI printing its value
 
 For SSH, inspect the entry metadata first, validate the host key, and use the SSH workflow with `agent-vault run`.
 
+## Remote Skill library
+
+When the local sync client has a Base URL and API Key configured, discover only authorized Skills on demand:
+
+```powershell
+agent-vault-client skills categories
+agent-vault-client skills list --category CATEGORY_ID
+agent-vault-client skills info SKILL_ID
+agent-vault-client skills download SKILL_ID --version VERSION --out .\skill.zip
+```
+
+The regular `pull` command does not download Skill packages. The download command verifies the package SHA-256. Review `SKILL.md` and dependency notes before installing or executing a downloaded Skill.
+
 ## Security rules
 
 - Do not use `get --reveal` unless the user explicitly requests plaintext or injection cannot complete the task.

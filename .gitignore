@@ -6,6 +6,7 @@ __pycache__/
 .mypy_cache/
 dist/
 build/
+build_windows/
 *.egg-info/
 .env
 .env.*

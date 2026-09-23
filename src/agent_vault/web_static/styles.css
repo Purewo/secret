@@ -4103,6 +4103,49 @@ svg {
   align-items: start;
 }
 
+.skill-hero {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  padding: 24px 28px;
+  border-radius: 28px;
+  background: linear-gradient(110deg, rgba(221, 255, 224, .82), rgba(225, 244, 255, .82) 58%, rgba(255, 248, 222, .82));
+}
+.skill-hero__glyph { display: grid; width: 58px; height: 58px; flex: 0 0 auto; place-items: center; border-radius: 20px; background: #c7f4bc; color: #218d6f; font-size: 30px; box-shadow: 0 10px 24px rgba(38, 103, 92, .13); }
+.skill-hero strong { font-family: var(--display); font-size: 22px; }
+.skill-hero p { margin: 6px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.skill-hero > span { margin-left: auto; color: var(--mint-deep); font-family: var(--display); font-size: 11px; font-weight: 800; letter-spacing: .17em; white-space: nowrap; }
+.skill-toolbar { display: flex; gap: 16px; align-items: center; justify-content: space-between; margin: 22px 0; }
+.skill-toolbar .category-strip { flex: 1; }
+.skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 20px; }
+.skill-card { display: flex; min-height: 244px; padding: 25px; flex-direction: column; text-align: left; border-radius: 27px; transition: transform .2s, box-shadow .2s; }
+.skill-card:hover { transform: translateY(-4px); box-shadow: 0 22px 48px rgba(38,103,92,.16); }
+.skill-card__top, .skill-card__foot { display: flex; align-items: center; justify-content: space-between; }
+.skill-card__glyph { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 16px; background: linear-gradient(135deg, #dbf7aa, #9be8d0); color: #137c69; font-size: 25px; }
+.skill-card__version { padding: 7px 10px; border-radius: 999px; background: rgba(92,189,245,.15); color: var(--aqua-deep); font-size: 12px; font-weight: 800; }
+.skill-card h2 { margin: 20px 0 8px; font-family: var(--display); font-size: 21px; }
+.skill-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.skill-card__foot { margin-top: auto; padding-top: 18px; color: var(--mint-deep); font-size: 12px; font-weight: 800; }
+.skill-empty { display: grid; min-height: 245px; grid-column: 1 / -1; place-content: center; justify-items: center; gap: 9px; border-radius: 27px; }
+.skill-empty > span { color: var(--mint-deep); font-size: 36px; }
+.skill-empty strong { font-size: 19px; }
+.skill-empty p { margin: 0; color: var(--muted); font-size: 14px; }
+.skill-upload-dialog { width: min(760px, calc(100% - 24px)); }
+.skill-small-dialog, .skill-detail-dialog { width: min(620px, calc(100% - 24px)); }
+.skill-upload-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+.skill-upload-fields .field--wide { grid-column: 1 / -1; }
+.skill-file { display: block; padding: 20px; border: 2px dashed rgba(22, 143, 117, .32); border-radius: 18px; background: rgba(240,255,243,.7); }
+.skill-file input { display: block; max-width: 100%; margin-bottom: 7px; }
+.skill-file > span { color: var(--muted); font-size: 12px; }
+.skill-detail-copy { margin: 0 0 20px; font-size: 15px; line-height: 1.7; }
+.skill-version-row { display: flex; gap: 18px; align-items: center; justify-content: space-between; padding: 18px 0; border-top: 1px solid var(--line); }
+.skill-version-row > div { display: grid; gap: 5px; }
+.skill-version-row strong { font-size: 16px; }
+.skill-version-row small { color: var(--muted); font-size: 12px; }
+.skill-version-hash { max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Consolas, monospace; }
+.skill-download { flex: 0 0 auto; padding: 10px 14px; border-radius: 13px; background: var(--lime); color: var(--ink); font-size: 13px; font-weight: 800; text-decoration: none; }
+@media (max-width: 700px) { .skill-hero { align-items: flex-start; flex-wrap: wrap; padding: 18px; } .skill-hero > span { display: none; } .skill-toolbar { align-items: stretch; flex-direction: column; } .skill-upload-fields { grid-template-columns: 1fr; } .skill-upload-fields .field--wide { grid-column: auto; } }
+
 .settings-card,
 .settings-note {
   border-radius: var(--radius-xl);

@@ -121,6 +121,11 @@
           <span>API 密钥</span>
           <b id="navApiKeyCount">0</b>
         </button>
+        <button class="nav-item" data-section="skills">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4zM8 9h8M8 13h5"></path></svg>
+          <span>Skill 仓库</span>
+          <b id="navSkillCount">0</b>
+        </button>
         <button class="nav-item" data-section="settings">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M18 6l-1.4 1.4M7.4 16.6 6 18M18 18l-1.4-1.4M7.4 7.4 6 6"></path><circle cx="12" cy="12" r="3.5"></circle></svg>
           <span>设置</span>
@@ -272,15 +277,25 @@
 
         <div id="apiKeysSection" class="page-section">
           <div class="page-title-row">
-            <div><span class="section-kicker">TRUSTED AGENTS</span><h1>API 密钥</h1><p>给受信任的 Agent 一把可撤销的内容访问钥匙。</p></div>
+            <div><span class="section-kicker">TRUSTED AGENTS</span><h1>API 密钥</h1><p>给受信任的 Agent 一把可撤销的访问钥匙。</p></div>
             <button class="secondary-button" data-open-api-key><span>＋</span> 新建 API Key</button>
           </div>
           <div class="api-key-hero">
             <div class="api-key-hero__icon" aria-hidden="true">⌁</div>
-            <div><strong>当前默认：无权限</strong><p>创建后需要在“权限管理”中开放分类和能力。请只交给你信任的 Agent，并在不再使用时立即撤销。</p></div>
+            <div><strong>当前默认：无权限</strong><p>创建后需要在“权限管理”中分别开放秘密内容和 Skill 分类。请只交给你信任的 Agent，并在不再使用时立即撤销。</p></div>
             <span class="api-key-hero__badge">LOCKED</span>
           </div>
           <div id="apiKeyList" class="api-key-list"></div>
+        </div>
+
+        <div id="skillsSection" class="page-section">
+          <div class="page-title-row">
+            <div><span class="section-kicker">PORTABLE KNOW-HOW</span><h1>Skill 仓库</h1><p>把可复用的能力打包收藏，随时交给受信任的 Agent。</p></div>
+            <button id="skillUploadOpen" class="secondary-button"><span>＋</span> 上传 Skill</button>
+          </div>
+          <div class="skill-hero glass"><div class="skill-hero__glyph">✦</div><div><strong>一次上传，到处可用</strong><p>Skill 包按分类与版本保存；Agent 可用 API Key 查看元信息并按需下载。</p></div><span>SKILL LIBRARY</span></div>
+          <div class="skill-toolbar"><div id="skillCategoryStrip" class="category-strip" role="group" aria-label="按分类筛选 Skill"></div><button id="skillCategoryOpen" class="ghost-outline-button" type="button">＋ 新建分类</button></div>
+          <div id="skillList" class="skill-grid"></div>
         </div>
 
         <div id="settingsSection" class="page-section">
@@ -431,6 +446,39 @@
     </article>
   </dialog>
 
+  <dialog id="skillCategoryDialog" class="modal skill-small-dialog">
+    <form id="skillCategoryForm" novalidate autocomplete="off">
+      <div class="modal-head"><div class="modal-icon modal-icon--mint">✦</div><div><span>NEW CATEGORY</span><h2>新建 Skill 分类</h2></div><button type="button" class="icon-button" data-close-skill-dialog aria-label="关闭">×</button></div>
+      <div class="modal-body">
+        <label class="field"><span>分类名称</span><span class="input-wrap"><input name="name" maxlength="40" placeholder="例如 文档处理" required></span></label>
+        <label class="field"><span>分类标识</span><span class="input-wrap"><input name="id" maxlength="80" pattern="[A-Za-z][A-Za-z0-9_\-]*" placeholder="例如 documents" required></span><small>用于 API 路径，创建后保持稳定。</small></label>
+        <p class="form-message" data-form-error role="alert"></p>
+      </div>
+      <div class="modal-foot"><button type="button" class="ghost-button" data-close-skill-dialog>取消</button><button class="primary-button" type="submit">创建分类</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="skillUploadDialog" class="modal skill-upload-dialog">
+    <form id="skillUploadForm" novalidate autocomplete="off">
+      <div class="modal-head"><div class="modal-icon modal-icon--blue">✦</div><div><span>NEW SKILL PACKAGE</span><h2>上传 Skill</h2></div><button type="button" class="icon-button" data-close-skill-dialog aria-label="关闭">×</button></div>
+      <div class="modal-body skill-upload-fields">
+        <label class="field"><span>名称 <b>必填</b></span><span class="input-wrap"><input name="name" maxlength="80" placeholder="例如 文档排版助手" required></span></label>
+        <label class="field"><span>版本号</span><span class="input-wrap"><input name="version" maxlength="64" value="1.0.0" pattern="[A-Za-z0-9][A-Za-z0-9._+\-]*" required></span></label>
+        <label class="field field--wide"><span>简介 <b>必填</b></span><span class="input-wrap"><textarea name="description" rows="3" maxlength="500" placeholder="这个 Skill 能解决什么问题？" required></textarea></span></label>
+        <label class="field"><span>分类</span><span class="input-wrap"><select id="skillUploadCategory" name="category"><option value="__other__">其他（默认）</option></select></span></label>
+        <label class="field"><span>环境依赖</span><span class="input-wrap"><select name="environment"><option value="auto">自动识别</option><option value="yes">需要额外环境</option><option value="no">开箱即用</option></select></span></label>
+        <label class="field field--wide"><span>依赖说明</span><span class="input-wrap"><input name="environment_note" maxlength="500" placeholder="例如 需要 Python 3.11 与独立虚拟环境"></span></label>
+        <label class="field field--wide"><span>Skill 压缩包 <b>ZIP，最大 25 MB</b></span><span class="skill-file"><input name="package" type="file" accept=".zip,application/zip" required><span>选择包含 SKILL.md 的 ZIP 文件；上传前确认包内没有密码或密钥。</span></span></label>
+        <p class="form-message field--wide" data-form-error role="alert"></p>
+      </div>
+      <div class="modal-foot"><button type="button" class="ghost-button" data-close-skill-dialog>取消</button><button class="primary-button" type="submit">上传并保存</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="skillDetailDialog" class="modal skill-detail-dialog">
+    <article><div class="modal-head"><div class="modal-icon modal-icon--yellow">✦</div><div><span>SKILL DETAIL</span><h2 id="skillDetailName">Skill</h2></div><button type="button" class="icon-button" data-close-skill-dialog aria-label="关闭">×</button></div><div id="skillDetailBody" class="modal-body"></div><div class="modal-foot"><button type="button" id="skillUploadVersion" class="ghost-button">上传新版本</button><button type="button" class="primary-button" data-close-skill-dialog>完成</button></div></article>
+  </dialog>
+
   <dialog id="apiKeyDialog" class="modal api-key-dialog">
     <form id="apiKeyForm" method="dialog" novalidate autocomplete="off">
       <div class="modal-head">
@@ -482,6 +530,8 @@
         <div class="permission-category-head"><span>开放分类</span><small>至少勾选一个分类才会有内容范围</small></div>
         <div id="apiPermissionCategoryList" class="permission-category-list"></div>
         <label class="permission-delete"><input id="apiPermissionDelete" type="checkbox"><span><strong>允许删除</strong><small>独立于新增权限，谨慎开启</small></span></label>
+        <div class="permission-category-head"><span>Skill 仓库可访问分类</span><small>独立于上面的秘密内容权限；不勾选即无法获取 Skill</small></div>
+        <div id="apiPermissionSkillCategoryList" class="permission-category-list"></div>
         <p class="form-message" data-api-permission-error role="alert"></p>
       </div>
       <div class="modal-foot"><button type="button" class="ghost-button" data-close-api-permission>暂时不要</button><button class="primary-button" type="submit"><span>保存权限</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></div>
