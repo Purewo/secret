@@ -64,13 +64,13 @@ uv run --no-sync python -m agent_vault.client push-entry japan_server
 Linux 上也可以直接用 `uv` 安装最新发布版 wheel：
 
 ```bash
-uv tool install https://github.com/Purewo/secret/releases/download/v0.3.0/agent_vault-0.3.0-py3-none-any.whl
+uv tool install https://github.com/Purewo/secret/releases/download/v0.3.1/agent_vault-0.3.1-py3-none-any.whl
 agent-vault init
 ```
 
-`v0.3.0` 发布包同时包含命令行保险柜、Web 管理台和本地同步客户端，服务端部署与客户端安装使用同一个 wheel；服务端只需额外配置 systemd 或其他进程托管方式。
+`v0.3.1` 发布包同时包含命令行保险柜、Web 管理台和本地同步客户端，服务端部署与客户端安装使用同一个 wheel；服务端只需额外配置 systemd 或其他进程托管方式。
 
-面向 Codex / Claude 的 Windows Agent Vault Skill 也随 Release 提供，下载 `agent-vault-windows-skill-0.3.0.zip` 后，将其中的 `windows-agent-vault` 目录放入对应的 skills 目录即可。Skill 只包含调用规则和无凭据脚本，不包含任何本机保险柜数据。
+面向 Codex / Claude 的 Windows Agent Vault Skill 也随 Release 提供，下载 `agent-vault-windows-skill-0.3.1.zip` 后，将其中的 `windows-agent-vault` 目录放入对应的 skills 目录即可。Skill 只包含调用规则和无凭据脚本，不包含任何本机保险柜数据。
 
 最低支持 Python 3.10。
 

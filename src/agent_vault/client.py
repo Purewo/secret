@@ -54,7 +54,7 @@ class SyncClient:
     def pull(self) -> dict[str, Any]:
         config = self._config_required()
         cursor = config.get("cursor", "")
-        query = f"?cursor={urllib.parse.quote(cursor)}" if cursor else ""
+        query = f"?cursor={urllib.parse.quote(str(cursor))}" if cursor else ""
         payload = self._request("GET", f"/api/v1/sync/pull{query}")
         self.vault.init()
         for category in payload.get("categories", []):
