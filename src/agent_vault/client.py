@@ -5,6 +5,7 @@ import getpass
 import hashlib
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -20,6 +21,8 @@ CLIENT_DIR_NAME = "Client"
 CLIENT_CONFIG_NAME = "sync.json"
 CLIENT_KEYRING_SERVICE = "agent-vault-sync-client"
 CLIENT_KEYRING_USERNAME = "remote-api-key"
+CLIENT_PROFILE_ENV = "AGENT_VAULT_CLIENT_PROFILE"
+PROFILE_RE = re.compile(r"[A-Za-z0-9_-]{1,40}\Z")
 
 
 class SyncClientError(Exception):
@@ -27,10 +30,15 @@ class SyncClientError(Exception):
 
 
 class SyncClient:
-    def __init__(self, home: Path | None = None) -> None:
+    def __init__(self, home: Path | None = None, profile: str | None = None) -> None:
+        selected_profile = profile if profile is not None else os.environ.get(CLIENT_PROFILE_ENV, "default")
+        if not PROFILE_RE.fullmatch(selected_profile):
+            raise SyncClientError("Client profile must use 1–40 letters, digits, underscores or hyphens.")
+        self.profile = selected_profile
+        self.keyring_username = CLIENT_KEYRING_USERNAME if selected_profile == "default" else f"{CLIENT_KEYRING_USERNAME}:{selected_profile}"
         self.vault = Vault(home)
         base = Path(home) if home is not None else default_vault_home()
-        self.home = base / CLIENT_DIR_NAME
+        self.home = base / CLIENT_DIR_NAME if selected_profile == "default" else base / CLIENT_DIR_NAME / "profiles" / selected_profile
         self.config_path = self.home / CLIENT_CONFIG_NAME
 
     def configure(self, base_url: str, api_key: str) -> None:
@@ -41,11 +49,12 @@ class SyncClient:
             raise SyncClientError("API key cannot be empty.")
         self.home.mkdir(parents=True, exist_ok=True)
         self.config_path.write_text(json.dumps({"base_url": base_url, "cursor": 0, "entry_revisions": {}}, ensure_ascii=False, indent=2), encoding="utf-8")
-        keyring.set_password(CLIENT_KEYRING_SERVICE, CLIENT_KEYRING_USERNAME, api_key.strip())
+        keyring.set_password(CLIENT_KEYRING_SERVICE, self.keyring_username, api_key.strip())
 
     def status(self) -> dict[str, Any]:
         config = self._config()
         return {
+            "profile": self.profile,
             "configured": bool(config.get("base_url") and self._api_key()),
             "base_url": config.get("base_url", ""),
             "cursor": config.get("cursor", ""),
@@ -164,6 +173,36 @@ class SyncClient:
             raise SyncClientError(f"Skill download failed: {exc}") from exc
         return {"skill_id": skill_id, "version": selected["version"], "path": str(destination), "sha256": digest.hexdigest()}
 
+    def upload_skill(self, package: Path, *, name: str = "", description: str = "", version: str,
+                     category: str = "__other__", environment: str = "auto", environment_note: str = "",
+                     skill_id: str | None = None) -> dict[str, Any]:
+        package = Path(package)
+        if not package.is_file() or package.suffix.lower() != ".zip":
+            raise SyncClientError("Select a ZIP package to upload.")
+        if package.stat().st_size <= 0 or package.stat().st_size > 25 * 1024 * 1024:
+            raise SyncClientError("Skill ZIP must be 1 byte to 25 MB.")
+        config = self._config_required()
+        query = urllib.parse.urlencode({
+            "name": name, "description": description, "version": version, "category": category,
+            "environment": environment, "environment_note": environment_note, "skill_id": skill_id or "",
+        })
+        request = urllib.request.Request(
+            f"{config['base_url']}/api/v1/skills/upload?{query}", data=package.read_bytes(), method="POST",
+        )
+        request.add_header("Authorization", f"Bearer {self._api_key()}")
+        request.add_header("Content-Type", "application/zip")
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            try:
+                message = json.loads(exc.read().decode("utf-8")).get("error", f"HTTP {exc.code}")
+            except (OSError, json.JSONDecodeError):
+                message = f"HTTP {exc.code}"
+            raise SyncClientError(message) from exc
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SyncClientError(f"Skill upload failed: {exc}") from exc
+
     def _config(self) -> dict[str, Any]:
         if not self.config_path.exists():
             return {}
@@ -181,7 +220,7 @@ class SyncClient:
 
     def _api_key(self) -> str | None:
         try:
-            return keyring.get_password(CLIENT_KEYRING_SERVICE, CLIENT_KEYRING_USERNAME)
+            return keyring.get_password(CLIENT_KEYRING_SERVICE, self.keyring_username)
         except Exception:
             return None
 
@@ -212,6 +251,7 @@ class SyncClient:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agent-vault-client", description="Offline-first Agent Vault sync client.")
+    parser.add_argument("--profile", help="Isolated client configuration and keyring slot (for example: codex).")
     sub = parser.add_subparsers(dest="command", required=True)
     configure = sub.add_parser("configure", help="Save remote URL and API key for this client.")
     configure.add_argument("--base-url", required=True)
@@ -231,13 +271,22 @@ def build_parser() -> argparse.ArgumentParser:
     skill_download.add_argument("skill_id")
     skill_download.add_argument("--version")
     skill_download.add_argument("--out", type=Path)
+    skill_upload = skill_sub.add_parser("upload", help="Upload a Skill ZIP to an authorized category.")
+    skill_upload.add_argument("package", type=Path)
+    skill_upload.add_argument("--name", default="", help="Required for a new Skill.")
+    skill_upload.add_argument("--description", default="", help="Required for a new Skill.")
+    skill_upload.add_argument("--version", required=True)
+    skill_upload.add_argument("--category", default="__other__")
+    skill_upload.add_argument("--environment", choices=("auto", "yes", "no"), default="auto")
+    skill_upload.add_argument("--environment-note", default="")
+    skill_upload.add_argument("--skill-id", help="Existing Skill ID when adding a version.")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    client = SyncClient()
     try:
+        client = SyncClient(profile=args.profile)
         if args.command == "configure":
             api_key = sys.stdin.read() if args.api_key_stdin else getpass.getpass("API key: ")
             client.configure(args.base_url, api_key)
@@ -255,8 +304,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result = client.list_skills(args.category)
             elif args.skill_command == "info":
                 result = client.skill_info(args.skill_id)
-            else:
+            elif args.skill_command == "download":
                 result = client.download_skill(args.skill_id, args.version, args.out)
+            else:
+                result = client.upload_skill(
+                    args.package, name=args.name, description=args.description, version=args.version,
+                    category=args.category, environment=args.environment,
+                    environment_note=args.environment_note, skill_id=args.skill_id,
+                )
             print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (SyncClientError, VaultError) as exc:

@@ -39,7 +39,7 @@ Web 页面默认只读取秘密变量的名称、标签和公开备注。登录�
 
 ## API Key 与远程 Agent
 
-管理台「个人中心」的「API 密钥」页签可以为受信任的 Agent 创建 API Key。新 Key 默认没有任何内容权限，管理员需要在“权限管理”中选择开放的分类和能力：只读，或可读 + 新增；删除权限是独立开关，默认关闭。管理员可以随时通过小眼睛查看、复制或撤销。
+管理台「个人中心」的「API 密钥」页签可以为受信任的 Agent 创建 API Key。新 Key 默认没有任何权限，管理员需要在“权限管理”中分别开放秘密内容分类和 Skill 分类。秘密内容可只读、可新增，删除权限独立配置；Skill 读取和上传也按分类分别配置。管理员可以随时通过小眼睛查看、复制或撤销。
 
 API Key 使用标准 Bearer 认证：
 
@@ -47,7 +47,7 @@ API Key 使用标准 Bearer 认证：
 Authorization: Bearer avk_...
 ```
 
-内容接口（例如 `/api/snapshot`、`/api/entries`、`/api/secrets`、`/api/categories`）接受 Bearer Key；API Key 管理接口只接受管理员浏览器会话，不会因为某个 Agent 拿到内容权限就能枚举或创建其他 Key。Bearer Key 只能看到被授权分类，不能跨分类读取；删除秘密还需要单独的删除权限。
+浏览器管理接口（例如 `/api/snapshot` 和 `/api/api-keys`）只接受管理员会话；Agent 通过 `/api/v1/sync/*` 和 `/api/v1/skills/*` 使用 Bearer Key。Key 只能访问被授权分类，不能枚举或创建其他 Key。
 
 本地同步客户端目前先以 CLI 形式提供：
 
@@ -59,11 +59,20 @@ uv run --no-sync python -m agent_vault.client push-entry japan_server
 
 客户端把 Base URL 写入本地 Client 配置，把 API Key 写入独立系统 keyring；本地拉取后的数据由本地保险柜负责读取和环境变量注入。同步失败时会返回服务端的具体原因，例如分类无权限、写入权限不足或版本冲突。
 
+多 Agent 在同一台电脑上使用时，为每个 Agent 配置独立客户端 profile，避免覆盖彼此的 API Key。例如：
+
+```powershell
+agent-vault-client --profile codex configure --base-url https://pioneer.fan:85 --api-key-stdin
+agent-vault-client --profile codex pull
+```
+
+默认 profile 与旧版客户端完全兼容；命名 profile 的配置在 `Client/profiles/PROFILE/sync.json`，密钥使用单独的系统 keyring 槽位。普通 `pull` 仍是主动操作，不会在后台自动覆盖本地数据。
+
 ## Skill 仓库
 
 Web 管理台的「Skill 仓库」页面可以新建分类并上传 Skill ZIP。每个 Skill 需要名称、简介和版本号；ZIP 的根目录或单一顶层目录必须包含非空 `SKILL.md`。同一个 Skill 可追加版本，旧版本保持可下载。服务端保存上传时间、下载次数、包大小、SHA-256 和运行环境提示；ZIP 上传上限为 25 MB，解压后上限为 100 MB。脚本文件会触发环境依赖提示，也可以在上传时手动指定。
 
-Skill 的元数据保存在独立的 `Skills/skills.db`，原包保存在 `Skills/packages/`。它们不写入保险柜内容数据库，也不随 `agent-vault-client pull` 同步。管理员可在 API Key 权限管理中单独勾选开放的 Skill 分类；默认不开放任何分类。
+Skill 的元数据保存在独立的 `Skills/skills.db`，原包保存在 `Skills/packages/`。它们不写入保险柜内容数据库，也不随 `agent-vault-client pull` 同步。管理员可在 API Key 权限管理中按分类分别授权读取和上传；默认两者都不开放。已有 Skill 的新版本只能追加到原分类，Agent 不能借上传移动 Skill 分类。
 
 Agent 使用 Bearer API Key 分步查询和下载：
 
@@ -72,6 +81,7 @@ GET /api/v1/skills/categories
 GET /api/v1/skills?category=documents
 GET /api/v1/skills/{skill_id}
 GET /api/v1/skills/{skill_id}/versions/{version}/download
+POST /api/v1/skills/upload?name=...&description=...&version=...&category=...
 ```
 
 详情返回 `download_url` 相对路径。下载时仍需发送 `Authorization: Bearer ...`，不要把 API Key 拼进下载 URL。浏览器管理员会话可直接从 Skill 详情下载 ZIP。
@@ -83,6 +93,7 @@ agent-vault-client skills categories
 agent-vault-client skills list --category documents
 agent-vault-client skills info SKILL_ID
 agent-vault-client skills download SKILL_ID --version 1.0.0 --out .\my-skill.zip
+agent-vault-client --profile codex skills upload .\my-skill.zip --name "My Skill" --description "简介" --version 1.0.0 --category __other__
 ```
 
 存储上，内容数据使用 SQLite `vault.db`，秘密值仍由 Fernet 加密；API Key 使用独立的 `ApiKeys/api_keys.db` 和独立系统 keyring 密钥，绝不写入内容数据库。首次启动 SQLite 后会从旧 `vault.enc` 自动迁移，旧文件会保留作为迁移来源。
@@ -90,13 +101,13 @@ agent-vault-client skills download SKILL_ID --version 1.0.0 --out .\my-skill.zip
 Linux 上也可以直接用 `uv` 安装最新发布版 wheel：
 
 ```bash
-uv tool install https://github.com/Purewo/secret/releases/download/v0.4.1/agent_vault-0.4.1-py3-none-any.whl
+uv tool install https://github.com/Purewo/secret/releases/download/v0.4.2/agent_vault-0.4.2-py3-none-any.whl
 agent-vault init
 ```
 
-`v0.4.1` 发布包同时包含命令行保险柜、Web 管理台和本地同步客户端，服务端部署与客户端安装使用同一个 wheel；服务端只需额外配置 systemd 或其他进程托管方式。
+`v0.4.2` 发布包同时包含命令行保险柜、Web 管理台和本地同步客户端，服务端部署与客户端安装使用同一个 wheel；服务端只需额外配置 systemd 或其他进程托管方式。
 
-面向 Codex / Claude 的 Windows Agent Vault Skill 也随 Release 提供，下载 `agent-vault-windows-skill-0.4.1.zip` 后，将其中的 `windows-agent-vault` 目录放入对应的 skills 目录即可。Skill 只包含调用规则和无凭据脚本，不包含任何本机保险柜数据。
+面向 Codex / Claude 的 Windows Agent Vault Skill 也随 Release 提供，下载 `agent-vault-windows-skill-0.4.2.zip` 后，将其中的 `windows-agent-vault` 目录放入对应的 skills 目录即可。Skill 只包含调用规则和无凭据脚本，不包含任何本机保险柜数据。
 
 最低支持 Python 3.10。
 

@@ -155,7 +155,7 @@ def test_api_key_is_returned_once_and_only_hash_is_persisted(vault_home, fake_ke
     listed = store.list()
 
     assert created["api_key"].startswith("avk_")
-    assert created["permissions"] == {"categories": [], "read": False, "add": False, "delete": False, "skill_categories": []}
+    assert created["permissions"] == {"categories": [], "read": False, "add": False, "delete": False, "skill_categories": [], "skill_upload_categories": []}
     assert "api_key" not in listed[0]
     assert "key_hash" not in listed[0]
     assert listed[0]["status"] == "active"

@@ -163,6 +163,45 @@ def test_skill_repository_scope_metadata_and_download(vault_home, fake_keyring) 
         else:
             assert False, "existing download must not be overwritten"
 
+        package = vault_home / "skill-package.zip"
+        package.write_bytes(archive)
+        try:
+            client.upload_skill(package, name="Blocked", description="No upload permission", version="1.0.0", category="documents")
+        except SyncClientError as exc:
+            assert "无权上传" in str(exc)
+        else:
+            assert False, "read-only Skill key must not upload"
+
+        status, granted, _ = request_json(address, "POST", f"/api/api-keys/{key['id']}/permissions",
+                                          {"categories": [], "read": False, "add": False, "delete": False,
+                                           "skill_categories": ["documents"], "skill_upload_categories": ["documents"]},
+                                          cookie=cookie, csrf_token=csrf)
+        assert status == 200
+        assert granted["api_key"]["permissions"]["skill_upload_categories"] == ["documents"]
+        uploaded = client.upload_skill(package, name="Agent Published", description="Published through profile",
+                                       version="1.0.0", category="documents")
+        assert uploaded["skill"]["category"] == "documents"
+        try:
+            client.upload_skill(package, name="Blocked", description="Wrong category", version="1.0.0", category="__other__")
+        except SyncClientError as exc:
+            assert "无权上传" in str(exc)
+        else:
+            assert False, "Skill key must not upload to another category"
+        next_version = client.upload_skill(package, version="1.2.0", skill_id=skill["id"])
+        assert next_version["skill"]["category"] == "documents"
+        assert next_version["skill"]["name"] == "Doc Expert"
+
+        status, full_access, _ = request_json(address, "POST", f"/api/api-keys/{key['id']}/permissions",
+                                              {"categories": ["__all__"], "read": True, "add": True, "delete": True,
+                                               "skill_categories": [], "skill_upload_categories": ["__all__"]},
+                                              cookie=cookie, csrf_token=csrf)
+        assert status == 200
+        assert full_access["api_key"]["permissions"]["skill_categories"] == ["__all__"]
+        assert client.list_skills("__other__")["skills"][0]["id"] == private_skill["skill"]["id"]
+        assert client.upload_skill(package, name="Cross Agent", description="Shared result", version="1.0.0",
+                                   category="__other__")["skill"]["category"] == "__other__"
+        assert request_json(address, "GET", "/api/v1/sync/pull", authorization=auth)[0] == 200
+
 
 def test_skill_upload_rejects_unsafe_archive(vault_home, fake_keyring) -> None:
     with running_web_server() as address:
@@ -433,7 +472,7 @@ def test_api_key_is_separate_and_bearer_can_use_content_api(vault_home, fake_key
         status, listed, _ = request_json(address, "GET", "/api/api-keys", cookie=cookie)
         assert status == 200
         assert raw_key not in json.dumps(listed)
-        assert listed["api_keys"][0]["permissions"] == {"categories": [], "read": False, "add": False, "delete": False, "skill_categories": []}
+        assert listed["api_keys"][0]["permissions"] == {"categories": [], "read": False, "add": False, "delete": False, "skill_categories": [], "skill_upload_categories": []}
 
         status, revealed, _ = request_json(
             address,

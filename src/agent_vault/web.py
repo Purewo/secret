@@ -401,9 +401,11 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 self._require_session_from_principal(principal)
                 key_id = path[len("/api/api-keys/") : -len("/permissions")].strip("/")
                 payload = self._read_json()
-                valid_skill_categories = {category["id"] for category in self.server.skills.categories()}
-                if any(category not in valid_skill_categories for category in payload.get("skill_categories", []) if isinstance(category, str)):
-                    raise ApiError(HTTPStatus.BAD_REQUEST, "包含不存在的 Skill 分类。")
+                valid_skill_categories = {category["id"] for category in self.server.skills.categories()} | {"__all__"}
+                for field in ("skill_categories", "skill_upload_categories"):
+                    selected = payload.get(field, [])
+                    if not isinstance(selected, list) or any(not isinstance(category, str) or category not in valid_skill_categories for category in selected):
+                        raise ApiError(HTTPStatus.BAD_REQUEST, "包含不存在的 Skill 分类。")
                 updated = self.server.api_keys.update_permissions(key_id, payload)
                 self._send_json(HTTPStatus.OK, {"api_key": updated})
                 return
@@ -416,8 +418,10 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 )
                 self._send_json(HTTPStatus.CREATED, {"category": category})
                 return
-            if path == "/api/skills/upload":
-                self._require_session_from_principal(principal)
+            if path in ("/api/skills/upload", "/api/v1/skills/upload"):
+                agent_upload = principal.kind == "api_key"
+                if agent_upload != (path == "/api/v1/skills/upload"):
+                    raise ApiError(HTTPStatus.FORBIDDEN, "请使用对应身份的 Skill 上传接口。")
                 if self.headers.get("Content-Type", "").split(";", 1)[0].lower() != "application/zip":
                     raise ApiError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "请上传 ZIP 压缩包。")
                 try:
@@ -431,10 +435,22 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 environment = value("environment", "auto")
                 if environment not in ("auto", "yes", "no"):
                     raise ApiError(HTTPStatus.BAD_REQUEST, "环境依赖选项无效。")
+                skill_id = value("skill_id") or None
+                category = value("category", "__other__")
+                name = value("name")
+                description = value("description")
+                if agent_upload:
+                    permissions = (principal.api_key or {}).get("permissions", {})
+                    allowed = set(permissions.get("skill_upload_categories", [])) if isinstance(permissions, dict) else set()
+                    if skill_id:
+                        existing = self.server.skills.detail(skill_id)
+                        category, name, description = existing["category"], existing["name"], existing["description"]
+                    if category not in allowed and "__all__" not in allowed:
+                        raise ApiError(HTTPStatus.FORBIDDEN, "API Key 无权上传到该 Skill 分类。")
                 created = self.server.skills.upload(
-                    self.rfile, length, name=value("name"), description=value("description"),
-                    version=value("version"), category=value("category", "__other__"),
-                    skill_id=value("skill_id") or None, environment_note=value("environment_note"),
+                    self.rfile, length, name=name, description=description,
+                    version=value("version"), category=category,
+                    skill_id=skill_id, environment_note=value("environment_note"),
                     requires_environment=None if environment == "auto" else environment == "yes",
                 )
                 self._send_json(HTTPStatus.CREATED, {"skill": created})

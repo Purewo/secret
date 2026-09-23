@@ -523,8 +523,10 @@
         <div class="permission-category-head"><span>开放分类</span><small>至少勾选一个分类才会有内容范围</small></div>
         <div id="apiPermissionCategoryList" class="permission-category-list"></div>
         <label class="permission-delete"><input id="apiPermissionDelete" type="checkbox"><span><strong>允许删除</strong><small>独立于新增权限，谨慎开启</small></span></label>
-        <div class="permission-category-head"><span>Skill 仓库可访问分类</span><small>独立于上面的秘密内容权限；不勾选即无法获取 Skill</small></div>
+        <div class="permission-category-head"><span>Skill 可读取分类</span><small>独立于秘密内容权限</small></div>
         <div id="apiPermissionSkillCategoryList" class="permission-category-list"></div>
+        <div class="permission-category-head"><span>Skill 可上传分类</span><small>上传权限自动包含该分类的读取权限</small></div>
+        <div id="apiPermissionSkillUploadCategoryList" class="permission-category-list"></div>
         <p class="form-message" data-api-permission-error role="alert"></p>
       </div>
       <div class="modal-foot"><button type="button" class="ghost-button" data-close-api-permission>暂时不要</button><button class="primary-button" type="submit"><span>保存权限</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></div>

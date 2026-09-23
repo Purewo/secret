@@ -1,4 +1,4 @@
-Agent Vault v0.4.1 · Windows x64
+Agent Vault v0.4.2 · Windows x64
 
 agent-vault.exe          Local encrypted vault CLI
 agent-vault-client.exe   Sync and on-demand Skill client
@@ -11,6 +11,7 @@ Examples:
   agent-vault-client.exe skills categories
   agent-vault-client.exe skills list --category documents
   agent-vault-client.exe skills download SKILL_ID --out .\skill.zip
+  agent-vault-client.exe --profile codex skills upload .\skill.zip --name "My Skill" --description "Reusable instructions" --version 1.0.0
   agent-vault-web.exe --open
 
 The executables use the current Windows user's Agent Vault data directory and

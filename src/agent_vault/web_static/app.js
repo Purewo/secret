@@ -579,8 +579,9 @@ function renderApiKeys() {
 
 function permissionLabel(permissions) {
   const content = !permissions?.read ? "无内容权限" : `${permissions.add ? "可读 + 新增" : "只读"}${permissions.delete ? " · 可删除" : ""}`;
-  const skills = permissions?.skill_categories?.length ? ` · Skill ${permissions.skill_categories.length} 类` : "";
-  return content + skills;
+  const skills = permissions?.skill_categories?.length ? ` · Skill ${permissions.skill_categories.includes("__all__") ? "全部" : `${permissions.skill_categories.length} 类`}` : "";
+  const uploads = permissions?.skill_upload_categories?.length ? " · 可上传" : "";
+  return content + skills + uploads;
 }
 
 function openApiKeyPermissionDialog(record) {
@@ -592,29 +593,32 @@ function openApiKeyPermissionDialog(record) {
   });
   const categoryList = document.querySelector("#apiPermissionCategoryList");
   categoryList.replaceChildren();
-  (state.snapshot?.categories || []).forEach((category) => {
+  [{ id: "__all__", name: "全部内容分类（含未来）", entry_count: null }, ...(state.snapshot?.categories || [])].forEach((category) => {
     const label = createElement("label", "permission-category-item");
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.name = "categories";
     checkbox.value = category.id;
-    checkbox.checked = (permissions.categories || []).includes(category.id) || (permissions.categories || []).includes("__all__");
-    label.append(checkbox, createElement("span", "", `${category.name} · ${category.entry_count}`));
+    checkbox.checked = (permissions.categories || []).includes(category.id);
+    label.append(checkbox, createElement("span", "", category.entry_count === null ? category.name : `${category.name} · ${category.entry_count}`));
     categoryList.append(label);
   });
   document.querySelector("#apiPermissionDelete").checked = Boolean(permissions.delete);
-  const skillCategoryList = document.querySelector("#apiPermissionSkillCategoryList");
-  skillCategoryList.replaceChildren();
-  state.skillCategories.forEach((category) => {
-    const label = createElement("label", "permission-category-item");
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.name = "skill_categories";
-    checkbox.value = category.id;
-    checkbox.checked = (permissions.skill_categories || []).includes(category.id);
-    label.append(checkbox, createElement("span", "", `${category.name} · ${category.skill_count} 个 Skill`));
-    skillCategoryList.append(label);
-  });
+  const skillOptions = [{ id: "__all__", name: "全部 Skill 分类（含未来）", skill_count: null }, ...state.skillCategories];
+  for (const [containerId, field] of [["apiPermissionSkillCategoryList", "skill_categories"], ["apiPermissionSkillUploadCategoryList", "skill_upload_categories"]]) {
+    const container = document.querySelector(`#${containerId}`);
+    container.replaceChildren();
+    skillOptions.forEach((category) => {
+      const label = createElement("label", "permission-category-item");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.name = field;
+      checkbox.value = category.id;
+      checkbox.checked = (permissions[field] || []).includes(category.id);
+      label.append(checkbox, createElement("span", "", category.skill_count === null ? category.name : `${category.name} · ${category.skill_count} 个 Skill`));
+      container.append(label);
+    });
+  }
   document.querySelector("[data-api-permission-error]").textContent = "";
   apiKeyPermissionDialog.showModal();
 }
@@ -1228,9 +1232,11 @@ apiKeyPermissionForm.addEventListener("submit", async (event) => {
   const level = apiKeyPermissionForm.querySelector("input[name='level']:checked")?.value || "none";
   const categories = [...apiKeyPermissionForm.querySelectorAll("input[name='categories']:checked")].map((input) => input.value);
   const skillCategories = [...apiKeyPermissionForm.querySelectorAll("input[name='skill_categories']:checked")].map((input) => input.value);
+  const skillUploadCategories = [...apiKeyPermissionForm.querySelectorAll("input[name='skill_upload_categories']:checked")].map((input) => input.value);
   const permissions = {
     categories,
     skill_categories: skillCategories,
+    skill_upload_categories: skillUploadCategories,
     read: level !== "none",
     add: level === "add",
     delete: document.querySelector("#apiPermissionDelete").checked,
