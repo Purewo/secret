@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Vault"
+  short_description: "Use the local Windows secret vault without exposing plaintext."
+  default_prompt: "Use the Agent Vault skill to find a stored entry and use its secrets without revealing plaintext."
