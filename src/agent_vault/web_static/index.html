@@ -116,19 +116,14 @@
           <span>变量检索</span>
           <b id="navSecretCount">0</b>
         </button>
-        <button class="nav-item" data-section="apiKeys">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="m11 12 7.5-7.5M15 8l2 2M18 5l2 2"></path></svg>
-          <span>API 密钥</span>
-          <b id="navApiKeyCount">0</b>
-        </button>
         <button class="nav-item" data-section="skills">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4zM8 9h8M8 13h5"></path></svg>
           <span>Skill 仓库</span>
           <b id="navSkillCount">0</b>
         </button>
         <button class="nav-item" data-section="settings">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M18 6l-1.4 1.4M7.4 16.6 6 18M18 18l-1.4-1.4M7.4 7.4 6 6"></path><circle cx="12" cy="12" r="3.5"></circle></svg>
-          <span>设置</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4.5 20a7.5 7.5 0 0 1 15 0"></path></svg>
+          <span>个人中心</span>
         </button>
       </nav>
 
@@ -275,19 +270,6 @@
           </div>
         </div>
 
-        <div id="apiKeysSection" class="page-section">
-          <div class="page-title-row">
-            <div><span class="section-kicker">TRUSTED AGENTS</span><h1>API 密钥</h1><p>给受信任的 Agent 一把可撤销的访问钥匙。</p></div>
-            <button class="secondary-button" data-open-api-key><span>＋</span> 新建 API Key</button>
-          </div>
-          <div class="api-key-hero">
-            <div class="api-key-hero__icon" aria-hidden="true">⌁</div>
-            <div><strong>当前默认：无权限</strong><p>创建后需要在“权限管理”中分别开放秘密内容和 Skill 分类。请只交给你信任的 Agent，并在不再使用时立即撤销。</p></div>
-            <span class="api-key-hero__badge">LOCKED</span>
-          </div>
-          <div id="apiKeyList" class="api-key-list"></div>
-        </div>
-
         <div id="skillsSection" class="page-section">
           <div class="page-title-row">
             <div><span class="section-kicker">PORTABLE KNOW-HOW</span><h1>Skill 仓库</h1><p>把可复用的能力打包收藏，随时交给受信任的 Agent。</p></div>
@@ -300,8 +282,13 @@
 
         <div id="settingsSection" class="page-section">
           <div class="page-title-row">
-            <div><span class="section-kicker">ACCOUNT SETTINGS</span><h1>设置</h1><p>管理管理员登录凭据，让保险柜只由你打开。</p></div>
+            <div><span class="section-kicker">MY VAULT ACCOUNT</span><h1>个人中心</h1><p>管理登录安全与交给 Agent 的访问权限。</p></div>
           </div>
+          <div class="personal-tabs" role="tablist" aria-label="个人中心页面">
+            <button class="personal-tab is-active" id="personalAccountTab" type="button" role="tab" aria-controls="personalAccountPanel" aria-selected="true" data-personal-tab="account"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg> 登录安全</button>
+            <button class="personal-tab" id="personalApiTab" type="button" role="tab" aria-controls="personalApiPanel" aria-selected="false" data-personal-tab="apiKeys"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="m11 12 7.5-7.5M15 8l2 2M18 5l2 2"></path></svg> API 密钥 <b id="navApiKeyCount">0</b></button>
+          </div>
+          <div id="personalAccountPanel" role="tabpanel" aria-labelledby="personalAccountTab">
           <div class="settings-grid">
             <section class="settings-card glass">
               <div class="settings-card__heading">
@@ -321,6 +308,12 @@
               <div><strong>给自己的小提醒</strong><p>密码只保存为不可逆的加盐哈希，不会进入保险柜条目，也不会在页面或日志里显示。</p></div>
               <div class="settings-note__line"><i></i><span>修改后需要重新登录</span></div>
             </aside>
+          </div>
+          </div>
+          <div id="personalApiPanel" role="tabpanel" aria-labelledby="personalApiTab" hidden>
+            <div class="personal-panel-head"><div><span class="section-kicker">TRUSTED AGENTS</span><h2>API 密钥</h2><p>给受信任的 Agent 一把可撤销的访问钥匙。</p></div><button class="secondary-button" data-open-api-key><span>＋</span> 新建 API Key</button></div>
+            <div class="api-key-hero"><div class="api-key-hero__icon" aria-hidden="true">⌁</div><div><strong>当前默认：无权限</strong><p>创建后在“权限管理”中分别开放秘密内容和 Skill 分类。</p></div><span class="api-key-hero__badge">LOCKED</span></div>
+            <div id="apiKeyList" class="api-key-list"></div>
           </div>
         </div>
       </section>
@@ -468,7 +461,7 @@
         <label class="field"><span>分类</span><span class="input-wrap"><select id="skillUploadCategory" name="category"><option value="__other__">其他（默认）</option></select></span></label>
         <label class="field"><span>环境依赖</span><span class="input-wrap"><select name="environment"><option value="auto">自动识别</option><option value="yes">需要额外环境</option><option value="no">开箱即用</option></select></span></label>
         <label class="field field--wide"><span>依赖说明</span><span class="input-wrap"><input name="environment_note" maxlength="500" placeholder="例如 需要 Python 3.11 与独立虚拟环境"></span></label>
-        <label class="field field--wide"><span>Skill 压缩包 <b>ZIP，最大 25 MB</b></span><span class="skill-file"><input name="package" type="file" accept=".zip,application/zip" required><span>选择包含 SKILL.md 的 ZIP 文件；上传前确认包内没有密码或密钥。</span></span></label>
+        <label class="field field--wide"><span>Skill 压缩包 <b>ZIP，最大 25 MB</b></span><span id="skillFileDropzone" class="skill-file"><input id="skillPackageInput" name="package" type="file" accept=".zip,application/zip" required><span class="skill-file__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16.5v2A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5v-2"></path></svg></span><span class="skill-file__copy"><strong id="skillFileTitle">把 Skill 包拖到这里</strong><small id="skillFileSubtitle">或点击选择 ZIP 文件</small></span><span id="skillFileAction" class="skill-file__action">选择文件 <span>↗</span></span></span><small class="skill-file__hint">包内需包含 SKILL.md · 上传前确认没有密码或密钥</small></label>
         <p class="form-message field--wide" data-form-error role="alert"></p>
       </div>
       <div class="modal-foot"><button type="button" class="ghost-button" data-close-skill-dialog>取消</button><button class="primary-button" type="submit">上传并保存</button></div>

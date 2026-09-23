@@ -23,7 +23,7 @@ from .skill_store import MAX_PACKAGE_BYTES, SkillAccessError, SkillStore
 from .storage import Vault, VaultError, utc_now
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 2001
+DEFAULT_PORT = 2005
 DEFAULT_USERNAME = "admin"
 DEFAULT_PASSWORD = "123456"
 SESSION_COOKIE = "agent_vault_session"

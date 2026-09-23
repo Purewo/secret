@@ -21,9 +21,9 @@ uv run --no-sync python -m agent_vault.web --open
 
 重新执行过 `uv sync` 或安装发布版后，也可以使用更短的 `agent-vault-web --open`。
 
-默认地址为 `http://127.0.0.1:2001`，初始账号为 `admin`，初始密码为 `123456`。
+默认地址为 `http://127.0.0.1:2005`，与自建服务器上的应用监听端口一致；公网入口仍是 Nginx 的 `https://pioneer.fan:85`。初始账号为 `admin`，初始密码为 `123456`。
 
-登录后进入侧栏「设置」，输入当前密码、新密码和确认密码即可修改密码（8–256 个字符）。修改后所有 Web 会话失效，需使用新密码重新登录；API Key 不受影响。
+登录后进入侧栏「个人中心」的「登录安全」，输入当前密码、新密码和确认密码即可修改密码（8–256 个字符）。修改后所有 Web 会话失效，需使用新密码重新登录；API Key 不受影响。
 
 Web 密码以加盐 PBKDF2-SHA256 哈希单独保存在数据目录的 `web_auth.json`，不进入内容库或同步数据，服务重启后继续生效。下面的环境变量用于指定用户名和首次启动的初始密码；已有密码文件时，密码环境变量不会覆盖已保存的密码。不要把正式密码写进仓库：
 
@@ -39,7 +39,7 @@ Web 页面默认只读取秘密变量的名称、标签和公开备注。登录�
 
 ## API Key 与远程 Agent
 
-管理台的“API 密钥”页面可以为受信任的 Agent 创建 API Key。新 Key 默认没有任何内容权限，管理员需要在“权限管理”中选择开放的分类和能力：只读，或可读 + 新增；删除权限是独立开关，默认关闭。管理员可以随时通过小眼睛查看、复制或撤销。
+管理台「个人中心」的「API 密钥」页签可以为受信任的 Agent 创建 API Key。新 Key 默认没有任何内容权限，管理员需要在“权限管理”中选择开放的分类和能力：只读，或可读 + 新增；删除权限是独立开关，默认关闭。管理员可以随时通过小眼睛查看、复制或撤销。
 
 API Key 使用标准 Bearer 认证：
 
@@ -90,13 +90,13 @@ agent-vault-client skills download SKILL_ID --version 1.0.0 --out .\my-skill.zip
 Linux 上也可以直接用 `uv` 安装最新发布版 wheel：
 
 ```bash
-uv tool install https://github.com/Purewo/secret/releases/download/v0.4.0/agent_vault-0.4.0-py3-none-any.whl
+uv tool install https://github.com/Purewo/secret/releases/download/v0.4.1/agent_vault-0.4.1-py3-none-any.whl
 agent-vault init
 ```
 
-`v0.4.0` 发布包同时包含命令行保险柜、Web 管理台和本地同步客户端，服务端部署与客户端安装使用同一个 wheel；服务端只需额外配置 systemd 或其他进程托管方式。
+`v0.4.1` 发布包同时包含命令行保险柜、Web 管理台和本地同步客户端，服务端部署与客户端安装使用同一个 wheel；服务端只需额外配置 systemd 或其他进程托管方式。
 
-面向 Codex / Claude 的 Windows Agent Vault Skill 也随 Release 提供，下载 `agent-vault-windows-skill-0.4.0.zip` 后，将其中的 `windows-agent-vault` 目录放入对应的 skills 目录即可。Skill 只包含调用规则和无凭据脚本，不包含任何本机保险柜数据。
+面向 Codex / Claude 的 Windows Agent Vault Skill 也随 Release 提供，下载 `agent-vault-windows-skill-0.4.1.zip` 后，将其中的 `windows-agent-vault` 目录放入对应的 skills 目录即可。Skill 只包含调用规则和无凭据脚本，不包含任何本机保险柜数据。
 
 最低支持 Python 3.10。
 

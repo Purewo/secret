@@ -4103,6 +4103,17 @@ svg {
   align-items: start;
 }
 
+.personal-tabs { display: inline-flex; max-width: 100%; margin-bottom: 24px; padding: 6px; align-items: center; gap: 4px; border: 1px solid rgba(255,255,255,.9); border-radius: 18px; background: rgba(255,255,255,.7); box-shadow: var(--shadow-soft); backdrop-filter: blur(18px); }
+.personal-tab { display: inline-flex; min-height: 46px; padding: 0 19px; align-items: center; gap: 10px; border-radius: 13px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 800; transition: background .2s ease, color .2s ease, box-shadow .2s ease; }
+.personal-tab:hover { color: var(--ink); background: rgba(219,247,234,.65); }
+.personal-tab.is-active { color: #174f43; background: linear-gradient(110deg, #dcfba9, #bcf3de); box-shadow: 0 7px 15px rgba(36,136,99,.13); }
+.personal-tab svg { width: 18px; height: 18px; stroke-width: 2; }
+.personal-tab b { display: grid; min-width: 23px; height: 23px; padding: 0 5px; place-items: center; border-radius: 8px; background: rgba(255,255,255,.72); font-size: 11px; }
+.personal-panel-head { display: flex; margin-bottom: 20px; align-items: center; justify-content: space-between; gap: 18px; }
+.personal-panel-head h2 { margin: 6px 0 4px; font-family: var(--display); font-size: 27px; }
+.personal-panel-head p { margin: 0; color: var(--muted); font-size: 14px; }
+@media (max-width: 700px) { .personal-tabs { width: 100%; } .personal-tab { flex: 1; justify-content: center; padding: 0 10px; } .personal-panel-head { align-items: stretch; flex-direction: column; } }
+
 .skill-hero {
   display: flex;
   gap: 20px;
@@ -4132,11 +4143,24 @@ svg {
 .skill-empty p { margin: 0; color: var(--muted); font-size: 14px; }
 .skill-upload-dialog { width: min(760px, calc(100% - 24px)); }
 .skill-small-dialog, .skill-detail-dialog { width: min(620px, calc(100% - 24px)); }
-.skill-upload-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+.skill-upload-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 15px 18px; padding-bottom: 0; }
 .skill-upload-fields .field--wide { grid-column: 1 / -1; }
-.skill-file { display: block; padding: 20px; border: 2px dashed rgba(22, 143, 117, .32); border-radius: 18px; background: rgba(240,255,243,.7); }
-.skill-file input { display: block; max-width: 100%; margin-bottom: 7px; }
-.skill-file > span { color: var(--muted); font-size: 12px; }
+.skill-upload-fields .field { margin-bottom: 0; }
+.skill-upload-fields .form-message { min-height: 0; margin: 0; }
+.skill-upload-dialog .modal-head { position: sticky; z-index: 2; top: 0; background: rgba(250, 253, 247, .96); backdrop-filter: blur(16px); }
+.skill-upload-dialog .modal-foot { position: sticky; z-index: 2; bottom: 0; margin-top: 12px; border-top: 1px solid var(--line); background: rgba(250, 253, 247, .97); backdrop-filter: blur(16px); }
+.skill-file { position: relative; display: flex; min-height: 116px; padding: 20px 22px; align-items: center; gap: 16px; border: 1.5px dashed rgba(36, 151, 123, .42); border-radius: 22px; background: linear-gradient(120deg, rgba(232, 255, 240, .92), rgba(239, 250, 255, .82)); cursor: pointer; transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease, background .2s ease; }
+.skill-file:hover, .skill-file.is-dragover, .skill-file:focus-within { transform: translateY(-2px); border-color: rgba(22, 143, 117, .85); background: linear-gradient(120deg, rgba(223, 254, 228, 1), rgba(226, 247, 255, .96)); box-shadow: 0 14px 30px rgba(34, 120, 105, .12); }
+.skill-file.is-selected { border-style: solid; border-color: rgba(33, 155, 121, .62); background: linear-gradient(120deg, #e4fae9, #effbff); }
+.skill-file input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.skill-file__icon { display: grid; width: 56px; height: 56px; flex: 0 0 auto; place-items: center; color: #138467; border-radius: 18px; background: linear-gradient(145deg, #cbf8aa, #95e8d2); box-shadow: 0 8px 20px rgba(45, 164, 129, .15); }
+.skill-file__icon svg { width: 27px; height: 27px; stroke-width: 1.9; }
+.skill-file__copy { display: grid; min-width: 0; gap: 5px; }
+.skill-file__copy strong { overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.skill-file__copy small { color: var(--muted); font-size: 12px; }
+.skill-file__action { display: inline-flex; margin-left: auto; padding: 10px 13px; align-items: center; gap: 8px; flex: 0 0 auto; border-radius: 12px; background: #fff; color: #16755e; box-shadow: 0 5px 14px rgba(30, 111, 91, .08); font-size: 12px; font-weight: 800; }
+.skill-file__action span { font-size: 17px; line-height: 1; }
+.skill-file__hint { color: var(--muted); font-size: 12px !important; }
 .skill-detail-copy { margin: 0 0 20px; font-size: 15px; line-height: 1.7; }
 .skill-version-row { display: flex; gap: 18px; align-items: center; justify-content: space-between; padding: 18px 0; border-top: 1px solid var(--line); }
 .skill-version-row > div { display: grid; gap: 5px; }
@@ -4144,7 +4168,7 @@ svg {
 .skill-version-row small { color: var(--muted); font-size: 12px; }
 .skill-version-hash { max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Consolas, monospace; }
 .skill-download { flex: 0 0 auto; padding: 10px 14px; border-radius: 13px; background: var(--lime); color: var(--ink); font-size: 13px; font-weight: 800; text-decoration: none; }
-@media (max-width: 700px) { .skill-hero { align-items: flex-start; flex-wrap: wrap; padding: 18px; } .skill-hero > span { display: none; } .skill-toolbar { align-items: stretch; flex-direction: column; } .skill-upload-fields { grid-template-columns: 1fr; } .skill-upload-fields .field--wide { grid-column: auto; } }
+@media (max-width: 700px) { .skill-hero { align-items: flex-start; flex-wrap: wrap; padding: 18px; } .skill-hero > span { display: none; } .skill-toolbar { align-items: stretch; flex-direction: column; } .skill-upload-fields { grid-template-columns: 1fr; } .skill-upload-fields .field--wide { grid-column: auto; } .skill-file { flex-wrap: wrap; padding: 17px; } .skill-file__action { width: 100%; justify-content: center; } }
 
 .settings-card,
 .settings-note {

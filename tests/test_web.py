@@ -89,8 +89,8 @@ def upload_skill(address: tuple[str, int], cookie: str, csrf: str, archive: byte
     return result
 
 
-def test_default_web_port_is_2001() -> None:
-    assert DEFAULT_PORT == 2001
+def test_default_web_port_is_2005() -> None:
+    assert DEFAULT_PORT == 2005
 
 
 def test_skill_repository_scope_metadata_and_download(vault_home, fake_keyring) -> None:

@@ -1,8 +1,8 @@
-Agent Vault v0.4.0 · Windows x64
+Agent Vault v0.4.1 · Windows x64
 
 agent-vault.exe          Local encrypted vault CLI
 agent-vault-client.exe   Sync and on-demand Skill client
-agent-vault-web.exe      Web management service (default port 2001)
+agent-vault-web.exe      Web management service (default port 2005)
 
 Examples:
   agent-vault.exe init

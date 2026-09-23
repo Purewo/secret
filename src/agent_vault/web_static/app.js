@@ -4,6 +4,7 @@ const state = {
   csrfToken: "",
   snapshot: null,
   section: "overview",
+  personalTab: "account",
   query: "",
   activeEntryId: null,
   entryPage: 1,
@@ -23,9 +24,8 @@ const labels = {
   overview: "总览",
   entries: "资源条目",
   secrets: "变量检索",
-  apiKeys: "API 密钥",
   skills: "Skill 仓库",
-  settings: "设置",
+  settings: "个人中心",
 };
 
 const loginView = document.querySelector("#loginView");
@@ -675,6 +675,7 @@ function populateSkillCategorySelect() {
 function openSkillUpload(skill = null) {
   skillUploadForm.reset();
   clearFormError(skillUploadForm);
+  updateSkillFileZone();
   state.uploadSkillId = skill?.id || null;
   populateSkillCategorySelect();
   if (skill) {
@@ -685,6 +686,15 @@ function openSkillUpload(skill = null) {
     skillDetailDialog.close();
   }
   skillUploadDialog.showModal();
+}
+
+function updateSkillFileZone() {
+  const file = skillUploadForm.elements.package.files[0];
+  const zone = document.querySelector("#skillFileDropzone");
+  zone.classList.toggle("is-selected", Boolean(file));
+  document.querySelector("#skillFileTitle").textContent = file ? file.name : "把 Skill 包拖到这里";
+  document.querySelector("#skillFileSubtitle").textContent = file ? `${formatSize(file.size)} · 已选择 ZIP 包` : "或点击选择 ZIP 文件";
+  document.querySelector("#skillFileAction").innerHTML = file ? "更换文件 <span>↗</span>" : "选择文件 <span>↗</span>";
 }
 
 async function openSkillDetail(id) {
@@ -879,6 +889,18 @@ function navigate(section) {
   document.querySelector("#currentSection").textContent = labels[section];
   appView.classList.remove("sidebar-open");
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function setPersonalTab(tab) {
+  state.personalTab = tab;
+  const account = tab === "account";
+  document.querySelector("#personalAccountPanel").hidden = !account;
+  document.querySelector("#personalApiPanel").hidden = account;
+  document.querySelectorAll("[data-personal-tab]").forEach((button) => {
+    const active = button.dataset.personalTab === tab;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
 }
 
 function openEntryDialog() {
@@ -1231,6 +1253,35 @@ apiKeyPermissionForm.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#skillUploadOpen").addEventListener("click", () => openSkillUpload());
+const skillPackageInput = document.querySelector("#skillPackageInput");
+const skillFileDropzone = document.querySelector("#skillFileDropzone");
+skillPackageInput.addEventListener("change", () => {
+  const file = skillPackageInput.files[0];
+  if (file && (!file.name.toLowerCase().endsWith(".zip") || file.size > 25 * 1024 * 1024)) {
+    skillPackageInput.value = "";
+    showFormError(skillUploadForm, "请选择不超过 25 MB 的 ZIP 文件。");
+  } else {
+    clearFormError(skillUploadForm);
+  }
+  updateSkillFileZone();
+});
+skillFileDropzone.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  skillFileDropzone.classList.add("is-dragover");
+});
+skillFileDropzone.addEventListener("dragleave", (event) => {
+  if (!skillFileDropzone.contains(event.relatedTarget)) skillFileDropzone.classList.remove("is-dragover");
+});
+skillFileDropzone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  skillFileDropzone.classList.remove("is-dragover");
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  skillPackageInput.files = transfer.files;
+  skillPackageInput.dispatchEvent(new Event("change", { bubbles: true }));
+});
 document.querySelector("#skillCategoryOpen").addEventListener("click", () => {
   skillCategoryForm.reset();
   skillCategoryForm.elements.id.value = `category_${Math.random().toString(36).slice(2, 10)}`;
@@ -1479,6 +1530,10 @@ document.querySelectorAll("[data-section]").forEach((button) => {
     event.preventDefault();
     navigate(button.dataset.section);
   });
+});
+
+document.querySelectorAll("[data-personal-tab]").forEach((button) => {
+  button.addEventListener("click", () => setPersonalTab(button.dataset.personalTab));
 });
 
 document.querySelectorAll("[data-open-entry]").forEach((button) => button.addEventListener("click", openEntryDialog));
