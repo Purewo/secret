@@ -13,6 +13,8 @@ dependencies = [
 
 [project.scripts]
 agent-vault = "agent_vault.cli:main"
+agent-vault-web = "agent_vault.web:main"
+agent-vault-client = "agent_vault.client:main"
 
 [dependency-groups]
 dev = [

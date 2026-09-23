@@ -21,6 +21,7 @@ KEY_FILE_NAME = "vault.key"
 VAULT_VERSION = 1
 NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 ENTRY_ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]*\Z")
+CATEGORY_ID_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]*\Z")
 
 
 class VaultError(Exception):
@@ -60,11 +61,17 @@ def validate_entry_id(entry_id: str) -> str:
     return entry_id
 
 
+def validate_category_id(category_id: str) -> str:
+    if not CATEGORY_ID_PATTERN.fullmatch(category_id):
+        raise VaultError("Invalid category id. Use [A-Za-z][A-Za-z0-9_-]*.")
+    return category_id
+
+
 def _is_windows() -> bool:
     return os.name == "nt"
 
 
-class Vault:
+class LegacyVault:
     def __init__(self, home: Path | None = None) -> None:
         self.home = Path(home) if home is not None else default_vault_home()
         self.path = self.home / "vault.enc"
@@ -158,25 +165,93 @@ class Vault:
             del data["records"][name]
             self._save_unlocked(data)
 
-    def set_entry(self, entry_id: str, description: str, tags: list[str] | None = None) -> dict[str, Any]:
+    def set_entry(
+        self,
+        entry_id: str,
+        description: str,
+        tags: list[str] | None = None,
+        category: str | None = None,
+    ) -> dict[str, Any]:
         entry_id = validate_entry_id(entry_id)
+        if category is not None:
+            category = validate_category_id(category)
         description = description.strip()
         if not description:
             raise VaultError("Entry description cannot be empty.")
         with self._lock():
             data = self._load_unlocked()
             entries = data["entries"]
+            if category is not None and category not in data["categories"]:
+                raise VaultError(f"Category '{category}' not found.")
             now = utc_now()
             previous = entries.get(entry_id)
             entries[entry_id] = {
                 "id": entry_id,
                 "description": description,
                 "tags": tags or [],
+                "category": category if category is not None else previous.get("category") if previous else None,
                 "created_at": previous.get("created_at", now) if previous else now,
                 "updated_at": now,
             }
             self._save_unlocked(data)
             return dict(entries[entry_id])
+
+    def set_category(self, category_id: str, name: str, color: str = "mint") -> dict[str, Any]:
+        category_id = validate_category_id(category_id)
+        name = " ".join(name.split())
+        if not name:
+            raise VaultError("Category name cannot be empty.")
+        with self._lock():
+            data = self._load_unlocked()
+            categories = data["categories"]
+            now = utc_now()
+            previous = categories.get(category_id)
+            categories[category_id] = {
+                "id": category_id,
+                "name": name,
+                "color": color,
+                "created_at": previous.get("created_at", now) if previous else now,
+                "updated_at": now,
+            }
+            self._save_unlocked(data)
+            return dict(categories[category_id])
+
+    def list_categories(self) -> list[dict[str, Any]]:
+        with self._lock():
+            data = self._load_unlocked()
+            counts: dict[str, int] = {}
+            for entry in data["entries"].values():
+                category = entry.get("category")
+                if category:
+                    counts[category] = counts.get(category, 0) + 1
+            categories = []
+            for category in data["categories"].values():
+                public = dict(category)
+                public["entry_count"] = counts.get(category["id"], 0)
+                categories.append(public)
+            return sorted(categories, key=lambda item: (item["name"].lower(), item["id"].lower()))
+
+    def assign_category(self, category_id: str | None, entry_ids: list[str]) -> list[dict[str, Any]]:
+        if category_id is not None:
+            category_id = validate_category_id(category_id)
+        if not entry_ids:
+            raise VaultError("At least one entry id is required.")
+        validated = [validate_entry_id(entry_id) for entry_id in entry_ids]
+        with self._lock():
+            data = self._load_unlocked()
+            if category_id is not None and category_id not in data["categories"]:
+                raise VaultError(f"Category '{category_id}' not found.")
+            missing = [entry_id for entry_id in validated if entry_id not in data["entries"]]
+            if missing:
+                raise VaultError(f"Entry not found: {', '.join(missing)}")
+            now = utc_now()
+            assigned = []
+            for entry_id in validated:
+                data["entries"][entry_id]["category"] = category_id
+                data["entries"][entry_id]["updated_at"] = now
+                assigned.append(dict(data["entries"][entry_id]))
+            self._save_unlocked(data)
+            return assigned
 
     def list_entries(self) -> list[dict[str, Any]]:
         with self._lock():
@@ -323,8 +398,12 @@ class Vault:
             raise VaultError("Vault file has an unsupported format.")
         if not isinstance(data.get("entries", data.get("projects", {})), dict):
             raise VaultError("Vault file has an unsupported entry format.")
+        if not isinstance(data.get("categories", {}), dict):
+            raise VaultError("Vault file has an unsupported category format.")
         if "entries" not in data:
             data["entries"] = data.pop("projects", {})
+        if "categories" not in data:
+            data["categories"] = {}
         for record in data["records"].values():
             if "entry" not in record and "project" in record:
                 record["entry"] = record.pop("project")
@@ -345,7 +424,14 @@ class Vault:
     @staticmethod
     def _empty_vault() -> dict[str, Any]:
         now = utc_now()
-        return {"version": VAULT_VERSION, "created_at": now, "updated_at": now, "records": {}, "entries": {}}
+        return {
+            "version": VAULT_VERSION,
+            "created_at": now,
+            "updated_at": now,
+            "records": {},
+            "entries": {},
+            "categories": {},
+        }
 
     @staticmethod
     def _case_conflict(records: dict[str, Any], name: str) -> str | None:
@@ -366,3 +452,10 @@ class Vault:
             if entry:
                 counts[entry] = counts.get(entry, 0) + 1
         return counts
+
+
+# SQLite is the active backend. LegacyVault remains available only for
+# migrating the pre-SQLite encrypted JSON file during first initialization.
+from .sqlite_storage import SQLiteVault
+
+Vault = SQLiteVault

@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5fbf4">
+  <meta name="description" content="Agent Vault 本地保险柜管理台">
+  <title>Agent Vault · 本地保险柜</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2375ddb8'/%3E%3Cpath d='m16 34 9 9 23-27' fill='none' stroke='%230b6654' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <span class="orb orb--a"></span>
+    <span class="orb orb--b"></span>
+    <span class="orb orb--c"></span>
+    <span class="grain"></span>
+  </div>
+
+  <main id="loginView" class="login-shell">
+    <section class="login-story" aria-labelledby="welcomeTitle">
+      <a class="brand" href="/" aria-label="Agent Vault 首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 42 42" role="img">
+            <path d="M8.5 22.5 14 28l19-19"></path>
+            <path d="M34 20.8V33a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3V13a3 3 0 0 1 3-3h12.2"></path>
+          </svg>
+        </span>
+        <span>AGENT VAULT</span>
+      </a>
+
+      <div class="hero-copy">
+        <div class="eyebrow"><i></i> LOCAL FIRST · ENCRYPTED</div>
+        <h1 id="welcomeTitle">把秘密收好，<br><em>把灵感放出来。</em></h1>
+        <p>一间只属于你的本地数字保管室。轻松整理服务器、账号与 API，让敏感信息安静地待在该在的地方。</p>
+      </div>
+
+      <div class="story-card glass">
+        <div class="story-icon" aria-hidden="true">✦</div>
+        <div>
+          <strong>只在你的设备上</strong>
+          <span>密文落盘，密钥由系统凭据库守护。</span>
+        </div>
+        <span class="story-line"></span>
+      </div>
+
+      <div class="floating-sticker sticker--safe" aria-hidden="true">SAFE<br>SPACE</div>
+      <div class="floating-sticker sticker--spark" aria-hidden="true">✳</div>
+    </section>
+
+    <section class="login-panel glass" aria-label="登录">
+      <div class="login-panel__top">
+        <span class="status-dot"></span>
+        <span>本地服务已连接</span>
+      </div>
+      <div class="login-panel__body">
+        <div class="login-heading">
+          <span class="mini-lock" aria-hidden="true">⌁</span>
+          <h2>欢迎回来</h2>
+          <p>验证身份后进入你的保险柜</p>
+        </div>
+        <form id="loginForm" novalidate>
+          <label class="field">
+            <span>账号</span>
+            <span class="input-wrap">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"></path></svg>
+              <input id="username" name="username" autocomplete="username" value="admin" required>
+            </span>
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <span class="input-wrap">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+              <input id="password" name="password" type="password" autocomplete="current-password" placeholder="输入登录密码" required>
+              <button class="peek-button" type="button" data-toggle-password="password" aria-label="显示密码">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg>
+              </button>
+            </span>
+          </label>
+          <p id="loginError" class="form-message" role="alert"></p>
+          <button id="loginButton" class="primary-button" type="submit">
+            <span>打开保险柜</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+          </button>
+        </form>
+        <p class="privacy-note"><span>◉</span> 登录凭据与秘密不会离开本机</p>
+      </div>
+    </section>
+  </main>
+
+  <main id="appView" class="app-shell" hidden>
+    <aside class="sidebar glass">
+      <div class="sidebar__head">
+        <a class="brand brand--app" href="#overviewSection" data-section="overview">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 42 42"><path d="M8.5 22.5 14 28l19-19"></path><path d="M34 20.8V33a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3V13a3 3 0 0 1 3-3h12.2"></path></svg>
+          </span>
+          <span>AGENT VAULT</span>
+        </a>
+        <button id="mobileClose" class="icon-button sidebar-close" aria-label="关闭菜单">×</button>
+      </div>
+
+      <nav class="nav-list" aria-label="主导航">
+        <button class="nav-item is-active" data-section="overview">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"></rect><rect x="14" y="3" width="7" height="7" rx="2"></rect><rect x="3" y="14" width="7" height="7" rx="2"></rect><rect x="14" y="14" width="7" height="7" rx="2"></rect></svg>
+          <span>总览</span>
+        </button>
+        <button class="nav-item" data-section="entries">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5Z"></path></svg>
+          <span>资源条目</span>
+          <b id="navEntryCount">0</b>
+        </button>
+        <button class="nav-item" data-section="secrets">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="m11 12 7.5-7.5M15 8l2 2M18 5l2 2"></path></svg>
+          <span>变量检索</span>
+          <b id="navSecretCount">0</b>
+        </button>
+        <button class="nav-item" data-section="apiKeys">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="m11 12 7.5-7.5M15 8l2 2M18 5l2 2"></path></svg>
+          <span>API 密钥</span>
+          <b id="navApiKeyCount">0</b>
+        </button>
+        <button class="nav-item" data-section="settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M18 6l-1.4 1.4M7.4 16.6 6 18M18 18l-1.4-1.4M7.4 7.4 6 6"></path><circle cx="12" cy="12" r="3.5"></circle></svg>
+          <span>设置</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-pulse">
+        <div class="pulse-orbit"><span></span></div>
+        <strong>加密引擎在线</strong>
+        <small>Fernet · Local storage</small>
+      </div>
+
+      <div class="sidebar__foot">
+        <div class="profile-chip">
+          <span class="avatar">A</span>
+          <span><strong>管理员</strong><small>本地会话</small></span>
+        </div>
+        <button id="logoutButton" class="icon-button" aria-label="退出登录" title="退出登录">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M15 4h3a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-3"></path></svg>
+        </button>
+      </div>
+    </aside>
+
+    <div class="content-shell">
+      <header class="topbar">
+        <button id="mobileMenu" class="icon-button menu-button" aria-label="打开菜单">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+        </button>
+        <div class="breadcrumb"><span>你的保险柜</span><i>/</i><strong id="currentSection">总览</strong></div>
+        <div class="topbar__actions">
+          <label class="search-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+            <input id="searchInput" type="search" placeholder="搜索资源或变量" aria-label="搜索资源或变量">
+            <kbd>⌘ K</kbd>
+          </label>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <div id="overviewSection" class="page-section is-active">
+          <div class="welcome-row">
+            <div>
+              <span class="date-chip" id="todayLabel">今天</span>
+              <h1>你好，今天也要<span>稳稳当当</span>。</h1>
+              <p>秘密无需被看见，也能在需要的时候可靠工作。</p>
+            </div>
+            <button id="newEntryButton" class="secondary-button"><span>＋</span> 添加条目</button>
+          </div>
+
+          <div class="metric-grid">
+            <article class="metric-card metric-card--mint">
+              <div class="metric-card__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5Z"></path></svg></div>
+              <span class="metric-card__label">资源条目</span>
+              <strong id="entryMetric">0</strong>
+              <small><i></i> 分类清晰，一目了然</small>
+              <span class="metric-shape">⌁</span>
+            </article>
+            <article class="metric-card metric-card--blue">
+              <div class="metric-card__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="m11 12 7.5-7.5M15 8l2 2M18 5l2 2"></path></svg></div>
+              <span class="metric-card__label">秘密变量</span>
+              <strong id="secretMetric">0</strong>
+              <small><i></i> 全部加密保存</small>
+              <span class="metric-shape">✦</span>
+            </article>
+            <button id="unassignedCard" class="metric-card metric-card--yellow metric-card--action" type="button">
+              <span class="metric-card__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"></path><path d="M12 7v5l3 2"></path><path d="m16 4 2 2 3-3"></path></svg></span>
+              <span class="metric-card__label">待整理</span>
+              <strong id="unassignedMetric">0</strong>
+              <small><i></i> 未归属任何条目</small>
+              <span class="metric-card__action">去整理 <b>→</b></span>
+              <span class="metric-shape">◌</span>
+            </button>
+          </div>
+
+          <div class="section-heading">
+            <div><span>COLLECTIONS</span><h2>最近的资源</h2></div>
+            <button class="text-button" data-section="entries">查看全部 <span>→</span></button>
+          </div>
+          <div id="recentEntries" class="entry-grid"></div>
+
+          <div class="tip-banner">
+            <div class="tip-visual" aria-hidden="true"><span>✣</span><i></i></div>
+            <div><strong>一个小提醒</strong><p>条目描述和变量名是可见元数据，真正的账号、密码与 Token 请只放进秘密值中。</p></div>
+            <button id="tipDismiss" class="icon-button" aria-label="关闭提醒">×</button>
+          </div>
+        </div>
+
+        <div id="entriesSection" class="page-section">
+          <div class="page-title-row">
+            <div><span class="section-kicker">COLLECTIONS</span><h1>资源条目</h1><p>用清晰的条目收纳一组相关秘密。</p></div>
+            <div class="page-title-actions">
+              <button id="manageCategoriesButton" class="ghost-outline-button"><span>⌘</span> 整理分类</button>
+            <button class="secondary-button" data-open-entry><span>＋</span> 添加条目</button>
+            </div>
+          </div>
+          <div class="category-shelf">
+            <div class="category-shelf__label"><span>◫</span><div><strong>资源分类</strong><small>选择一个分类查看</small></div></div>
+            <div id="categoryStrip" class="category-strip" role="group" aria-label="按分类筛选资源"></div>
+          </div>
+          <div id="allEntries" class="entry-grid entry-grid--all"></div>
+          <div id="entryPagination" class="pagination glass" hidden>
+            <div class="pagination__summary">
+              <span id="entryPageRange">第 1–12 个</span>
+              <i></i>
+              <strong id="entryPageTotal">共 0 个资源</strong>
+            </div>
+            <div class="pagination__controls">
+              <label class="page-size">
+                <span>每页</span>
+                <select id="entryPageSize" aria-label="每页显示数量">
+                  <option value="12" selected>12</option>
+                  <option value="24">24</option>
+                  <option value="48">48</option>
+                </select>
+              </label>
+              <nav id="entryPageButtons" class="page-buttons" aria-label="资源条目分页"></nav>
+            </div>
+          </div>
+        </div>
+
+        <div id="secretsSection" class="page-section">
+          <div class="page-title-row">
+            <div><span class="section-kicker">SECRET LOOKUP</span><h1>变量检索</h1><p>需要时再查，不再把数百条变量全部铺在页面上。</p></div>
+          </div>
+
+          <div class="lookup-hero">
+            <div class="lookup-copy">
+              <span class="lookup-spark" aria-hidden="true">✦</span>
+              <div><strong>找一枚秘密</strong><p>按变量名、公开备注、标签或资源名称搜索。</p></div>
+            </div>
+            <label class="lookup-search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+              <input id="variableSearchInput" type="search" placeholder="例如 password、cloudflare、ssh…" autocomplete="off" aria-label="检索秘密变量">
+              <kbd>⌘ K</kbd>
+            </label>
+            <div class="lookup-stat"><strong id="lookupTotal">0</strong><span>枚可检索变量</span></div>
+          </div>
+
+          <div class="lookup-heading">
+            <div><span id="lookupMode">NEEDS A HOME</span><h2 id="lookupTitle">待整理变量</h2><p id="lookupDescription">这些变量尚未归入任何资源，值得顺手整理一下。</p></div>
+            <span id="lookupCount" class="lookup-count">0 条</span>
+          </div>
+
+          <div class="secret-table-card lookup-table">
+            <div class="secret-table-head lookup-table-head"><span>变量</span><span>所属资源</span><span>标签</span><span>更新时间</span><span>操作</span></div>
+            <div id="secretList" class="secret-list"></div>
+          </div>
+        </div>
+
+        <div id="apiKeysSection" class="page-section">
+          <div class="page-title-row">
+            <div><span class="section-kicker">TRUSTED AGENTS</span><h1>API 密钥</h1><p>给受信任的 Agent 一把可撤销的内容访问钥匙。</p></div>
+            <button class="secondary-button" data-open-api-key><span>＋</span> 新建 API Key</button>
+          </div>
+          <div class="api-key-hero">
+            <div class="api-key-hero__icon" aria-hidden="true">⌁</div>
+            <div><strong>当前默认：无权限</strong><p>创建后需要在“权限管理”中开放分类和能力。请只交给你信任的 Agent，并在不再使用时立即撤销。</p></div>
+            <span class="api-key-hero__badge">LOCKED</span>
+          </div>
+          <div id="apiKeyList" class="api-key-list"></div>
+        </div>
+
+        <div id="settingsSection" class="page-section">
+          <div class="page-title-row">
+            <div><span class="section-kicker">ACCOUNT SETTINGS</span><h1>设置</h1><p>管理管理员登录凭据，让保险柜只由你打开。</p></div>
+          </div>
+          <div class="settings-grid">
+            <section class="settings-card glass">
+              <div class="settings-card__heading">
+                <div class="settings-card__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg></div>
+                <div><span class="section-kicker">ADMIN ACCESS</span><h2>修改登录密码</h2><p>修改成功后当前会话会退出，需要用新密码重新登录。</p></div>
+              </div>
+              <form id="passwordForm" class="settings-password-form" autocomplete="off" novalidate>
+                <label class="field"><span>当前密码 <b>必填</b></span><span class="input-wrap"><input id="settingsCurrentPassword" name="current_password" type="password" autocomplete="current-password" placeholder="输入当前密码" minlength="1" required><button class="peek-button" type="button" data-toggle-password="settingsCurrentPassword" aria-label="显示当前密码"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg></button></span></label>
+                <label class="field"><span>新密码 <b>至少 8 个字符</b></span><span class="input-wrap"><input id="settingsNewPassword" name="new_password" type="password" autocomplete="new-password" placeholder="设置一个新的登录密码" minlength="8" required><button class="peek-button" type="button" data-toggle-password="settingsNewPassword" aria-label="显示新密码"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg></button></span></label>
+                <label class="field"><span>确认新密码 <b>必填</b></span><span class="input-wrap"><input id="settingsConfirmPassword" name="confirm_password" type="password" autocomplete="new-password" placeholder="再次输入新密码" minlength="8" required><button class="peek-button" type="button" data-toggle-password="settingsConfirmPassword" aria-label="显示确认密码"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg></button></span></label>
+                <p class="form-message" data-password-error role="alert"></p>
+                <button class="primary-button settings-submit" type="submit"><span>保存新密码</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>
+              </form>
+            </section>
+            <aside class="settings-note glass">
+              <span class="settings-note__mark">✦</span>
+              <div><strong>给自己的小提醒</strong><p>密码只保存为不可逆的加盐哈希，不会进入保险柜条目，也不会在页面或日志里显示。</p></div>
+              <div class="settings-note__line"><i></i><span>修改后需要重新登录</span></div>
+            </aside>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+  </main>
+
+  <dialog id="entryDialog" class="modal">
+    <form id="entryForm" method="dialog" novalidate>
+      <div class="modal-head">
+        <div class="modal-icon modal-icon--mint"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5Z"></path></svg></div>
+        <div><span>NEW COLLECTION</span><h2>添加资源条目</h2></div>
+        <button type="button" class="icon-button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="field"><span>条目标识 <b>必填</b></span><span class="input-wrap"><input name="id" autocomplete="off" placeholder="例如 japan_server" pattern="[A-Za-z][A-Za-z0-9_\-]*" maxlength="80" required></span><small>以字母开头，可使用字母、数字、下划线和连字符</small></label>
+        <label class="field"><span>一句话描述 <b>必填</b></span><span class="input-wrap"><input name="description" autocomplete="off" placeholder="例如 日本区域的生产服务器" maxlength="240" required></span></label>
+        <label class="field"><span>资源分类</span><span class="input-wrap"><select id="entryCategory" name="category"><option value="__other__">其他（默认）</option></select></span><small>之后也可以在资源详情或“整理分类”里修改</small></label>
+        <label class="field"><span>标签</span><span class="input-wrap"><input name="tags" autocomplete="off" placeholder="server, japan, production" maxlength="240"></span><small>用逗号分隔，方便之后快速筛选</small></label>
+        <p class="form-message" data-form-error role="alert"></p>
+      </div>
+      <div class="modal-foot"><button type="button" class="ghost-button" data-close-dialog>暂时不要</button><button class="primary-button" type="submit"><span>创建条目</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="secretDialog" class="modal">
+    <form id="secretForm" method="dialog" novalidate autocomplete="off">
+      <div class="modal-head">
+        <div class="modal-icon modal-icon--blue"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="m11 12 7.5-7.5M15 8l2 2M18 5l2 2"></path></svg></div>
+        <div><span>NEW SECRET</span><h2>添加秘密变量</h2></div>
+        <button type="button" class="icon-button" data-close-dialog aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body modal-body--grid">
+        <label class="field field--wide"><span>变量名 <b>必填</b></span><span class="input-wrap"><input name="name" autocomplete="off" placeholder="例如 server_password" pattern="[A-Za-z_][A-Za-z0-9_]*" maxlength="128" required></span><small>保存后，代理会用这个名字把秘密注入环境变量</small></label>
+        <label class="field field--wide"><span>秘密值 <b>必填</b></span><span class="input-wrap input-wrap--secret"><textarea id="secretValue" name="value" rows="3" placeholder="粘贴密码、Token 或密钥内容" required spellcheck="false"></textarea><button type="button" class="peek-button" data-toggle-secret aria-label="显示秘密值"><svg viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg></button></span><small class="safe-copy">● 该值将加密落盘，保存后页面不会再次展示</small></label>
+        <label class="field"><span>所属资源</span><span class="input-wrap"><select id="secretEntry" name="entry"><option value="">暂不归类</option></select></span></label>
+        <label class="field"><span>标签</span><span class="input-wrap"><input name="tags" autocomplete="off" placeholder="ssh, production"></span></label>
+        <label class="field field--wide"><span>公开备注</span><span class="input-wrap"><input name="note" autocomplete="off" placeholder="不要在这里填写秘密内容" maxlength="240"></span></label>
+        <p class="form-message field--wide" data-form-error role="alert"></p>
+      </div>
+      <div class="modal-foot"><button type="button" class="ghost-button" data-close-dialog>暂时不要</button><button class="primary-button" type="submit"><span>加密保存</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="detailDialog" class="detail-drawer">
+    <article class="detail-shell">
+      <header class="detail-head">
+        <div class="detail-head__bar">
+          <span class="detail-kicker">COLLECTION DETAIL</span>
+          <button type="button" class="icon-button" data-close-detail aria-label="关闭详情">×</button>
+        </div>
+        <div class="detail-identity">
+          <span id="detailIcon" class="detail-identity__icon" aria-hidden="true">AV</span>
+          <div>
+            <span id="detailCount" class="detail-count">0 个变量</span>
+            <h2 id="detailTitle">资源条目</h2>
+          </div>
+        </div>
+        <p id="detailDescription" class="detail-description"></p>
+        <div id="detailTags" class="tag-row detail-tags"></div>
+        <div class="detail-category-editor">
+          <label for="detailCategorySelect">资源分类</label>
+          <select id="detailCategorySelect"><option value="__other__">其他</option></select>
+          <button id="detailCategorySave" type="button">保存归类</button>
+        </div>
+      </header>
+      <div class="detail-content">
+        <div class="detail-section-title">
+          <div><span>ENCRYPTED VARIABLES</span><h3>条目里的变量</h3></div>
+          <button id="detailAddSecret" class="detail-add-button"><span>＋</span> 添加变量</button>
+        </div>
+        <p class="detail-security-note"><span>●</span> 默认保持遮挡；只有点击显示或复制时才会读取单项明文。</p>
+        <div id="detailVariableList" class="detail-variable-list"></div>
+      </div>
+      <footer class="detail-foot">
+        <span><i></i> 本地加密存储</span>
+        <button type="button" class="ghost-button" data-close-detail>完成</button>
+      </footer>
+    </article>
+  </dialog>
+
+  <dialog id="categoryDialog" class="modal category-dialog">
+    <article>
+      <div class="modal-head">
+        <div class="modal-icon modal-icon--yellow"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="7" rx="2"></rect><rect x="14" y="4" width="7" height="7" rx="2"></rect><rect x="3" y="15" width="7" height="5" rx="2"></rect><path d="M14 17.5h7"></path></svg></div>
+        <div><span>ORGANIZE COLLECTIONS</span><h2>整理资源分类</h2></div>
+        <button type="button" class="icon-button" data-close-category aria-label="关闭分类管理">×</button>
+      </div>
+
+      <div class="category-dialog__body">
+        <section class="category-create-panel">
+          <div class="category-panel-title"><span>01</span><div><strong>新建分类</strong><small>例如服务器、游戏、账号</small></div></div>
+          <form id="categoryCreateForm" class="category-create-form" autocomplete="off">
+            <label class="field"><span>分类名称</span><span class="input-wrap"><input name="name" autocomplete="off" placeholder="输入分类名称" maxlength="40" required></span></label>
+            <fieldset class="color-picker">
+              <legend>选择颜色</legend>
+              <label><input type="radio" name="color" value="mint" checked><span class="color-dot color-dot--mint">✓</span></label>
+              <label><input type="radio" name="color" value="blue"><span class="color-dot color-dot--blue">✓</span></label>
+              <label><input type="radio" name="color" value="yellow"><span class="color-dot color-dot--yellow">✓</span></label>
+              <label><input type="radio" name="color" value="coral"><span class="color-dot color-dot--coral">✓</span></label>
+              <label><input type="radio" name="color" value="lilac"><span class="color-dot color-dot--lilac">✓</span></label>
+            </fieldset>
+            <p class="form-message" data-category-create-error role="alert"></p>
+            <button class="category-create-button" type="submit">＋ 创建分类</button>
+          </form>
+          <div id="categoryManagerList" class="category-manager-list"></div>
+        </section>
+
+        <section class="category-assign-panel">
+          <div class="category-panel-title"><span>02</span><div><strong>批量移动资源</strong><small>勾选多个资源，一次归入同一分类</small></div></div>
+          <form id="categoryAssignForm" autocomplete="off">
+            <label class="field"><span>移动到</span><span class="input-wrap"><select id="categoryAssignTarget" name="category"><option value="__other__">其他（默认）</option></select></span></label>
+            <div class="entry-picker-head">
+              <label><input id="categorySelectAll" type="checkbox"> <span>选择全部</span></label>
+              <strong id="categorySelectedCount">已选 0 个</strong>
+            </div>
+            <div id="categoryEntryList" class="category-entry-list"></div>
+            <p class="form-message" data-category-assign-error role="alert"></p>
+            <button class="primary-button category-assign-button" type="submit"><span>移动所选资源</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button>
+          </form>
+        </section>
+      </div>
+    </article>
+  </dialog>
+
+  <dialog id="apiKeyDialog" class="modal api-key-dialog">
+    <form id="apiKeyForm" method="dialog" novalidate autocomplete="off">
+      <div class="modal-head">
+        <div class="modal-icon modal-icon--blue"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="m11 12 7.5-7.5M15 8l2 2M18 5l2 2"></path></svg></div>
+        <div><span>TRUSTED AGENT</span><h2>新建 API Key</h2></div>
+        <button type="button" class="icon-button" data-close-api-key aria-label="关闭 API Key 创建">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="field"><span>名称 <b>必填</b></span><span class="input-wrap"><input name="name" autocomplete="off" placeholder="例如 office-copilot" maxlength="80" required></span><small>用名称记住这把钥匙交给了哪个 Agent</small></label>
+        <label class="field"><span>备注</span><span class="input-wrap"><textarea name="note" rows="3" autocomplete="off" placeholder="例如 家庭电脑上的远程办公 Agent" maxlength="240"></textarea></span></label>
+        <div class="api-key-warning"><span>!</span><p>创建后默认没有内容权限，需要在权限管理中选择分类和能力。API Key 会独立存储，不会进入内容保险柜。</p></div>
+        <p class="form-message" data-api-key-error role="alert"></p>
+      </div>
+      <div class="modal-foot"><button type="button" class="ghost-button" data-close-api-key>暂时不要</button><button class="primary-button" type="submit"><span>生成 API Key</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="apiKeyRevealDialog" class="modal api-key-reveal-dialog">
+    <article>
+      <div class="modal-head">
+        <div class="modal-icon modal-icon--yellow">◉</div>
+        <div><span>KEY READY</span><h2>API Key 已生成</h2></div>
+        <button type="button" class="icon-button" data-close-api-key-reveal aria-label="关闭 API Key 显示">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="api-key-reveal-lead">这把钥匙属于 <strong id="apiKeyRevealName">trusted-agent</strong>，管理员现在可以随时查看它。</p>
+        <div class="api-key-reveal-box"><code id="apiKeyRevealValue">avk_••••••••</code><button id="apiKeyRevealCopy" type="button" class="value-action value-action--copy">复制</button></div>
+        <p class="api-key-reveal-note">请通过安全渠道交给受信任的 Agent。它当前的权限由管理员在“权限管理”中分配。</p>
+      </div>
+      <div class="modal-foot"><button type="button" class="primary-button" data-close-api-key-reveal>我知道了</button></div>
+    </article>
+  </dialog>
+
+  <dialog id="apiKeyPermissionDialog" class="modal api-key-permission-dialog">
+    <form id="apiKeyPermissionForm" method="dialog" novalidate>
+      <div class="modal-head">
+        <div class="modal-icon modal-icon--mint">◇</div>
+        <div><span>ACCESS CONTROL</span><h2>权限管理</h2></div>
+        <button type="button" class="icon-button" data-close-api-permission aria-label="关闭权限管理">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="permission-lead">正在配置 <strong id="permissionKeyName">remote-agent</strong>。默认无权限，只能访问下面勾选的分类。</p>
+        <fieldset class="permission-levels">
+          <legend>内容能力</legend>
+          <label><input type="radio" name="level" value="none" checked><span><strong>无权限</strong><small>不能读取或修改内容</small></span></label>
+          <label><input type="radio" name="level" value="read"><span><strong>只读</strong><small>可以读取已授权分类</small></span></label>
+          <label><input type="radio" name="level" value="add"><span><strong>可读 + 新增</strong><small>可以读取并新增，不可删除</small></span></label>
+        </fieldset>
+        <div class="permission-category-head"><span>开放分类</span><small>至少勾选一个分类才会有内容范围</small></div>
+        <div id="apiPermissionCategoryList" class="permission-category-list"></div>
+        <label class="permission-delete"><input id="apiPermissionDelete" type="checkbox"><span><strong>允许删除</strong><small>独立于新增权限，谨慎开启</small></span></label>
+        <p class="form-message" data-api-permission-error role="alert"></p>
+      </div>
+      <div class="modal-foot"><button type="button" class="ghost-button" data-close-api-permission>暂时不要</button><button class="primary-button" type="submit"><span>保存权限</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="apiKeyActionDialog" class="modal api-key-action-dialog">
+    <article>
+      <div class="modal-head">
+        <div id="apiKeyActionIcon" class="modal-icon modal-icon--yellow">!</div>
+        <div><span id="apiKeyActionKicker">CONFIRM ACTION</span><h2 id="apiKeyActionTitle">确认操作</h2></div>
+        <button type="button" class="icon-button" data-close-api-action aria-label="关闭确认">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="apiKeyActionLead" class="api-key-action-lead"></p>
+        <div class="api-key-action-target"><span>⌁</span><div><strong id="apiKeyActionName">remote-agent</strong><small id="apiKeyActionPrefix">avk_••••••••</small></div></div>
+        <div id="apiKeyActionWarning" class="api-key-action-warning"><strong>不可逆操作</strong><p>删除后无法恢复，使用它的 Agent 将永久失去这把钥匙。</p></div>
+      </div>
+      <div class="modal-foot"><button type="button" class="ghost-button" data-close-api-action>取消</button><button id="apiKeyActionConfirm" type="button" class="danger-button">确认删除</button></div>
+    </article>
+  </dialog>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite"></div>
+</body>
+</html>
