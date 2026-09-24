@@ -48,7 +48,7 @@ agent-vault run VARIABLE_NAME -- COMMAND ARGUMENTS
 
 The child process receives the variable without the vault CLI printing its value. Do not echo or serialize the injected environment variable.
 
-For SSH, inspect the entry metadata first, validate the host key, and use the SSH workflow with `agent-vault run`.
+For a saved SSH server, inspect entry metadata first. When the local `ssh-remote` skill is installed, prefer its entry-ID helper: it resolves only the selected SSH variables in process and verifies the host key before authentication. Otherwise use `agent-vault run` with selected variable names and a host-key-verified SSH workflow.
 
 ## Remote Skill library
 
