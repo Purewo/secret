@@ -401,6 +401,13 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 self._require_session_from_principal(principal)
                 key_id = path[len("/api/api-keys/") : -len("/permissions")].strip("/")
                 payload = self._read_json()
+                valid_content_categories = {category["id"] for category in self.server.vault.list_categories()} | {"__other__", "__all__"}
+                selected_content = payload.get("categories", [])
+                if not isinstance(selected_content, list) or any(
+                    not isinstance(category, str) or category not in valid_content_categories
+                    for category in selected_content
+                ):
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "包含不存在的保险柜分类。")
                 valid_skill_categories = {category["id"] for category in self.server.skills.categories()} | {"__all__"}
                 for field in ("skill_categories", "skill_upload_categories"):
                     selected = payload.get(field, [])

@@ -606,6 +606,90 @@ def test_api_key_category_scope_filters_snapshot_and_writes(vault_home, fake_key
         assert blocked_push["results"][0]["code"] == "permission_denied"
 
 
+def test_api_key_cannot_create_categories_but_can_use_existing_ones(vault_home, fake_keyring) -> None:
+    vault = Vault()
+    vault.init()
+    vault.set_category("servers", "Servers")
+    vault.set_category("games", "Games")
+    vault.set_entry("move_me", "existing", category="servers")
+    with running_web_server() as address:
+        cookie, csrf_token = login(address)
+        status, created, _ = request_json(
+            address, "POST", "/api/api-keys", {"name": "category-agent"},
+            cookie=cookie, csrf_token=csrf_token,
+        )
+        assert status == 201
+        key = created["api_key"]
+        bearer = f"Bearer {key['api_key']}"
+        permissions_path = f"/api/api-keys/{key['id']}/permissions"
+
+        status, error, _ = request_json(
+            address, "POST", permissions_path,
+            {"categories": ["phantom"], "read": True, "add": True, "delete": False},
+            cookie=cookie, csrf_token=csrf_token,
+        )
+        assert status == 400
+        assert "不存在的保险柜分类" in error["error"]
+        assert request_json(
+            address, "POST", "/api/categories", {"id": "phantom", "name": "Phantom"},
+            authorization=bearer,
+        )[0] == 403
+        assert request_json(
+            address, "POST", "/api/v1/categories", {"id": "phantom", "name": "Phantom"},
+            authorization=bearer,
+        )[0] == 404
+        assert request_json(
+            address, "POST", "/api/skills/categories", {"id": "phantom", "name": "Phantom"},
+            authorization=bearer,
+        )[0] == 403
+        assert request_json(
+            address, "POST", "/api/v1/skills/categories", {"id": "phantom", "name": "Phantom"},
+            authorization=bearer,
+        )[0] == 404
+
+        status, _, _ = request_json(
+            address, "POST", permissions_path,
+            {"categories": ["__all__"], "read": True, "add": True, "delete": False,
+             "skill_upload_categories": ["__all__"]},
+            cookie=cookie, csrf_token=csrf_token,
+        )
+        assert status == 200
+        status, rejected, _ = request_json(
+            address, "POST", "/api/v1/sync/push",
+            {"entries": [{"id": "new_entry", "description": "must not appear", "category": "phantom"}]},
+            authorization=bearer,
+        )
+        assert status == 200
+        assert rejected["results"][0]["ok"] is False
+        assert "not found" in rejected["results"][0]["message"]
+        assert "new_entry" not in {entry["id"] for entry in vault.list_entries()}
+
+        status, created_entry, _ = request_json(
+            address, "POST", "/api/v1/sync/push",
+            {"entries": [{"id": "new_entry", "description": "existing category", "category": "games"}]},
+            authorization=bearer,
+        )
+        assert status == 200 and created_entry["results"][0]["ok"] is True
+        status, moved, _ = request_json(
+            address, "POST", "/api/v1/sync/push",
+            {"entries": [{"id": "move_me", "description": "existing", "category": "games"}]},
+            authorization=bearer,
+        )
+        assert status == 200 and moved["results"][0]["ok"] is True
+        assert vault.get_entry("new_entry")["category"] == "games"
+        assert vault.get_entry("move_me")["category"] == "games"
+        assert {category["id"] for category in vault.list_categories()} == {"servers", "games"}
+
+        client = SyncClient(vault_home / "category-agent")
+        client.configure(f"http://{address[0]}:{address[1]}", key["api_key"])
+        package = vault_home / "category-test-skill.zip"
+        package.write_bytes(skill_zip())
+        with pytest.raises(SyncClientError, match="Skill 分类不存在"):
+            client.upload_skill(package, name="Phantom", description="No category drift",
+                                version="1.0.0", category="phantom")
+        assert {category["id"] for category in client.skill_categories()["categories"]} == {"__other__"}
+
+
 def test_api_key_move_requires_access_to_both_categories(vault_home, fake_keyring) -> None:
     vault = Vault()
     vault.init()
