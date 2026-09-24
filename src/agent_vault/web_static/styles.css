@@ -3261,8 +3261,119 @@ svg {
   line-height: 1.6;
 }
 
+.api-key-permission-dialog .modal-body {
+  padding-top: 19px;
+}
+
+html:has(.api-key-permission-dialog[open]) {
+  overflow: hidden;
+}
+
+.permission-stack {
+  display: grid;
+  gap: 9px;
+}
+
+.permission-section {
+  overflow: hidden;
+  border: 1px solid rgba(50, 111, 102, 0.13);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: 0 6px 22px rgba(45, 99, 89, 0.035);
+}
+
+.permission-section.is-open {
+  border-color: rgba(54, 167, 135, 0.27);
+  box-shadow: 0 13px 30px rgba(58, 145, 119, 0.08);
+}
+
+.permission-section--skill.is-open {
+  border-color: rgba(94, 160, 204, 0.3);
+}
+
+.permission-section__toggle {
+  display: flex;
+  width: 100%;
+  min-height: 66px;
+  padding: 11px 15px;
+  align-items: center;
+  gap: 11px;
+  text-align: left;
+  cursor: pointer;
+  background: rgba(246, 251, 246, 0.65);
+}
+
+.permission-section.is-open .permission-section__toggle {
+  background: linear-gradient(105deg, rgba(231, 249, 229, 0.94), rgba(241, 252, 249, 0.75));
+}
+
+.permission-section--skill.is-open .permission-section__toggle {
+  background: linear-gradient(105deg, rgba(232, 246, 252, 0.96), rgba(244, 249, 253, 0.8));
+}
+
+.permission-section__toggle:focus-visible {
+  outline: 2px solid #349e85;
+  outline-offset: -3px;
+}
+
+.permission-section__number {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  color: #2b7b6d;
+  border-radius: 11px;
+  background: rgba(136, 226, 185, 0.28);
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.permission-section--skill .permission-section__number {
+  color: #317fa2;
+  background: rgba(139, 208, 235, 0.3);
+}
+
+.permission-section__heading {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.permission-section__heading strong {
+  color: #244a45;
+  font-size: 14px;
+}
+
+.permission-section__heading small {
+  color: #7b938e;
+  font-size: 11px;
+}
+
+.permission-section__arrow {
+  color: #6e9790;
+  font-size: 21px;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.permission-section.is-open .permission-section__arrow {
+  transform: rotate(180deg);
+}
+
+.permission-section__body {
+  padding: 16px;
+  border-top: 1px solid rgba(60, 122, 111, 0.09);
+}
+
+.permission-section__body[hidden] {
+  display: none;
+}
+
 .permission-lead {
-  margin: 0 0 18px;
+  margin: 0 0 15px;
   color: #607975;
   font-size: 13px;
   line-height: 1.6;
@@ -3270,6 +3381,45 @@ svg {
 
 .permission-lead strong {
   color: var(--ink);
+}
+
+.permission-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.permission-summary-grid > div {
+  display: grid;
+  min-height: 72px;
+  padding: 12px;
+  align-content: center;
+  gap: 5px;
+  border: 1px solid rgba(84, 154, 139, 0.14);
+  border-radius: 12px;
+  background: rgba(245, 251, 247, 0.78);
+}
+
+.permission-summary-grid span {
+  color: #65857d;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.permission-summary-grid strong {
+  color: #265d52;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.permission-general-rule {
+  margin: 12px 0 0;
+  padding: 10px 11px;
+  color: #5b7774;
+  border-radius: 10px;
+  background: rgba(226, 246, 245, 0.62);
+  font-size: 11px;
+  line-height: 1.55;
 }
 
 .permission-levels {
@@ -3346,6 +3496,10 @@ svg {
   gap: 10px;
 }
 
+.permission-category-head--second {
+  margin-top: 15px;
+}
+
 .permission-category-head span {
   color: #536f6a;
   font-size: 11px;
@@ -3391,6 +3545,51 @@ svg {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.permission-move-note {
+  display: flex;
+  margin-top: 11px;
+  padding: 12px 13px;
+  gap: 10px;
+  border: 1px solid rgba(79, 162, 184, 0.23);
+  border-radius: 13px;
+  background: linear-gradient(115deg, rgba(230, 249, 251, 0.86), rgba(241, 250, 232, 0.82));
+  box-shadow: 0 8px 22px rgba(66, 139, 145, 0.06);
+}
+
+.permission-move-note__icon {
+  display: grid;
+  flex: 0 0 29px;
+  height: 29px;
+  place-items: center;
+  color: #277f83;
+  border-radius: 9px;
+  background: rgba(128, 215, 219, 0.25);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.permission-move-note strong {
+  display: block;
+  color: #276469;
+  font-size: 12px;
+}
+
+.permission-move-note p {
+  margin: 4px 0 0;
+  color: #5d7776;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.api-key-permission-dialog .modal-foot {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  border-top: 1px solid var(--line);
+  background: rgba(250, 253, 247, 0.96);
+  backdrop-filter: blur(14px);
 }
 
 .permission-delete {

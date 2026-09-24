@@ -602,3 +602,59 @@ def test_api_key_category_scope_filters_snapshot_and_writes(vault_home, fake_key
         assert server_push["results"][0]["ok"] is True
         assert blocked_push["results"][0]["ok"] is False
         assert blocked_push["results"][0]["code"] == "permission_denied"
+
+
+def test_api_key_move_requires_access_to_both_categories(vault_home, fake_keyring) -> None:
+    vault = Vault()
+    vault.init()
+    vault.set_category("servers", "Servers")
+    vault.set_category("games", "Games")
+    vault.set_entry("server_one", "server before", category="servers")
+    vault.set_entry("game_one", "game before", category="games")
+    vault.set_secret("game_token", "test-only", entry="game_one")
+    with running_web_server() as address:
+        cookie, csrf_token = login(address)
+        status, created, _ = request_json(
+            address, "POST", "/api/api-keys", {"name": "restricted-agent"},
+            cookie=cookie, csrf_token=csrf_token,
+        )
+        assert status == 201
+        key = created["api_key"]
+        bearer = f"Bearer {key['api_key']}"
+        status, _, _ = request_json(
+            address, "POST", f"/api/api-keys/{key['id']}/permissions",
+            {"categories": ["servers"], "read": True, "add": True, "delete": False},
+            cookie=cookie, csrf_token=csrf_token,
+        )
+        assert status == 200
+
+        def push(item: dict[str, Any]) -> dict[str, Any]:
+            status, payload, _ = request_json(
+                address, "POST", "/api/v1/sync/push", {"entries": [item]}, authorization=bearer,
+            )
+            assert status == 200
+            return payload["results"][0]
+
+        assert push({"id": "game_one", "description": "stolen", "category": "servers"})["code"] == "permission_denied"
+        assert vault.get_entry("game_one")["category"] == "games"
+        assert vault.get_entry("game_one")["description"] == "game before"
+
+        assert push({"id": "server_one", "description": "moved", "category": "games"})["code"] == "permission_denied"
+        assert vault.get_entry("server_one")["category"] == "servers"
+
+        assert push({
+            "id": "server_one", "description": "hijack", "category": "servers",
+            "variables": [{"name": "game_token", "value": "changed"}],
+        })["code"] == "permission_denied"
+        assert vault.get_entry("server_one")["description"] == "server before"
+        assert vault.get_secret("game_token")["entry"] == "game_one"
+        assert vault.get_secret("game_token")["value"] == "test-only"
+
+        status, _, _ = request_json(
+            address, "POST", f"/api/api-keys/{key['id']}/permissions",
+            {"categories": ["servers", "games"], "read": True, "add": True, "delete": False},
+            cookie=cookie, csrf_token=csrf_token,
+        )
+        assert status == 200
+        assert push({"id": "server_one", "description": "moved", "category": "games"})["ok"] is True
+        assert vault.get_entry("server_one")["category"] == "games"

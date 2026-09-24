@@ -584,6 +584,38 @@ function permissionLabel(permissions) {
   return content + skills + uploads;
 }
 
+function showPermissionSection(name) {
+  apiKeyPermissionForm.querySelectorAll("[data-permission-section]").forEach((section) => {
+    const active = section.dataset.permissionSection === name;
+    section.classList.toggle("is-open", active);
+    section.querySelector(".permission-section__toggle").setAttribute("aria-expanded", String(active));
+    section.querySelector(".permission-section__body").hidden = !active;
+  });
+}
+
+function permissionScopeLabel(values) {
+  if (values.includes("__all__")) return "全部分类（含未来）";
+  return values.length ? `${values.length} 个分类` : "未开放";
+}
+
+function updatePermissionSummary() {
+  const selected = (name) => [...apiKeyPermissionForm.querySelectorAll(`input[name='${name}']:checked`)].map((input) => input.value);
+  const level = apiKeyPermissionForm.querySelector("input[name='level']:checked")?.value || "none";
+  const categories = selected("categories");
+  const deleteAllowed = document.querySelector("#apiPermissionDelete").checked;
+  const vaultCapabilities = [];
+  if (level === "read") vaultCapabilities.push("只读");
+  if (level === "add") vaultCapabilities.push("可读 + 新增");
+  if (deleteAllowed) vaultCapabilities.push("可删除");
+  document.querySelector("#permissionVaultSummary").textContent = vaultCapabilities.length
+    ? `${vaultCapabilities.join(" · ")} · ${permissionScopeLabel(categories)}` : "未开放";
+
+  const skillReads = [...new Set([...selected("skill_categories"), ...selected("skill_upload_categories")])];
+  const skillUploads = selected("skill_upload_categories");
+  document.querySelector("#permissionSkillSummary").textContent = skillReads.length || skillUploads.length
+    ? `读取 ${permissionScopeLabel(skillReads)} · 上传 ${permissionScopeLabel(skillUploads)}` : "未开放";
+}
+
 function openApiKeyPermissionDialog(record) {
   state.activePermissionKeyId = record.id;
   document.querySelector("#permissionKeyName").textContent = record.name;
@@ -620,6 +652,8 @@ function openApiKeyPermissionDialog(record) {
     });
   }
   document.querySelector("[data-api-permission-error]").textContent = "";
+  updatePermissionSummary();
+  showPermissionSection("general");
   apiKeyPermissionDialog.showModal();
 }
 
@@ -627,6 +661,13 @@ function closeApiKeyPermissionDialog() {
   state.activePermissionKeyId = null;
   if (apiKeyPermissionDialog.open) apiKeyPermissionDialog.close();
 }
+
+apiKeyPermissionForm.querySelectorAll("[data-permission-section]").forEach((section) => {
+  section.querySelector(".permission-section__toggle").addEventListener("click", () => {
+    showPermissionSection(section.dataset.permissionSection);
+  });
+});
+apiKeyPermissionForm.addEventListener("change", updatePermissionSummary);
 
 function formatSize(bytes) {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

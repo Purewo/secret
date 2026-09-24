@@ -733,21 +733,39 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 category = str(item.get("category") or "__other__")
                 self._require_api_permission(principal, "add", category)
                 existing = self.server.vault.get_entry(entry_id)
+                self._require_api_permission(principal, "read", self._entry_category_value(existing))
                 expected_revision = item.get("expected_revision")
                 if expected_revision is not None and int(expected_revision) != int(existing.get("revision", 0)):
                     results.append({"ok": False, "code": "conflict", "message": "远端条目已发生变化，请先拉取再解决冲突。", "entry_id": entry_id})
                     continue
             except ApiError as exc:
                 results.append({"ok": False, "code": "permission_denied", "message": exc.message, "entry_id": entry_id})
+                continue
             except VaultError as exc:
                 if "not found" not in str(exc).lower() and "not found" not in str(exc):
                     results.append({"ok": False, "code": "permission_or_validation", "message": str(exc), "entry_id": entry_id})
                     continue
                 existing = None
+            variables = item.get("variables", [])
+            if not isinstance(variables, list) or any(
+                not isinstance(variable, dict) or not isinstance(variable.get("name"), str)
+                for variable in variables
+            ):
+                results.append({"ok": False, "code": "invalid_entry", "message": "条目变量格式无效。", "entry_id": entry_id})
+                continue
+            try:
+                prior_records = {record["name"]: record for record in self.server.vault.list_records()}
+                for variable in variables:
+                    prior = prior_records.get(variable["name"])
+                    if prior is not None:
+                        self._require_api_permission(principal, "read", self._record_category(prior))
+            except ApiError as exc:
+                results.append({"ok": False, "code": "permission_denied", "message": exc.message, "entry_id": entry_id})
+                continue
             try:
                 category_value = None if category == "__other__" else category
                 saved = self.server.vault.set_entry(entry_id, str(item.get("description", "")), tags=item.get("tags", []), category=category_value)
-                for variable in item.get("variables", []):
+                for variable in variables:
                     self.server.vault.set_secret(
                         variable["name"],
                         variable["value"],

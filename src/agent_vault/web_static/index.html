@@ -513,20 +513,52 @@
         <button type="button" class="icon-button" data-close-api-permission aria-label="关闭权限管理">×</button>
       </div>
       <div class="modal-body">
-        <p class="permission-lead">正在配置 <strong id="permissionKeyName">remote-agent</strong>。默认无权限，只能访问下面勾选的分类。</p>
-        <fieldset class="permission-levels">
-          <legend>内容能力</legend>
-          <label><input type="radio" name="level" value="none" checked><span><strong>无权限</strong><small>不能读取或修改内容</small></span></label>
-          <label><input type="radio" name="level" value="read"><span><strong>只读</strong><small>可以读取已授权分类</small></span></label>
-          <label><input type="radio" name="level" value="add"><span><strong>可读 + 新增</strong><small>可以读取并新增，不可删除</small></span></label>
-        </fieldset>
-        <div class="permission-category-head"><span>开放分类</span><small>至少勾选一个分类才会有内容范围</small></div>
-        <div id="apiPermissionCategoryList" class="permission-category-list"></div>
-        <label class="permission-delete"><input id="apiPermissionDelete" type="checkbox"><span><strong>允许删除</strong><small>独立于新增权限，谨慎开启</small></span></label>
-        <div class="permission-category-head"><span>Skill 可读取分类</span><small>独立于秘密内容权限</small></div>
-        <div id="apiPermissionSkillCategoryList" class="permission-category-list"></div>
-        <div class="permission-category-head"><span>Skill 可上传分类</span><small>上传权限自动包含该分类的读取权限</small></div>
-        <div id="apiPermissionSkillUploadCategoryList" class="permission-category-list"></div>
+        <div class="permission-stack">
+          <section class="permission-section permission-section--general is-open" data-permission-section="general">
+            <button class="permission-section__toggle" type="button" aria-expanded="true" aria-controls="permissionGeneralBody">
+              <span class="permission-section__number">01</span><span class="permission-section__heading"><strong>通用</strong><small>授权预览与共通规则</small></span><span class="permission-section__arrow" aria-hidden="true">⌄</span>
+            </button>
+            <div id="permissionGeneralBody" class="permission-section__body">
+              <p class="permission-lead">正在配置 <strong id="permissionKeyName">remote-agent</strong>。保险柜与 Skill 的权限彼此独立，创建密钥时默认都不开放。</p>
+              <div class="permission-summary-grid">
+                <div><span>保险柜</span><strong id="permissionVaultSummary">未开放</strong></div>
+                <div><span>Skill</span><strong id="permissionSkillSummary">未开放</strong></div>
+              </div>
+              <p class="permission-general-rule">保存后，权限从下一次请求起生效。「全部分类」也包含未来新建的分类；新建分类和管理 API Key 仍由管理员操作。</p>
+            </div>
+          </section>
+          <section class="permission-section permission-section--vault" data-permission-section="vault">
+            <button class="permission-section__toggle" type="button" aria-expanded="false" aria-controls="permissionVaultBody">
+              <span class="permission-section__number">02</span><span class="permission-section__heading"><strong>保险柜</strong><small>条目读写、分类和删除</small></span><span class="permission-section__arrow" aria-hidden="true">⌄</span>
+            </button>
+            <div id="permissionVaultBody" class="permission-section__body" hidden>
+              <fieldset class="permission-levels">
+                <legend>条目能力</legend>
+                <label><input type="radio" name="level" value="none" checked><span><strong>无权限</strong><small>不能读取或修改条目</small></span></label>
+                <label><input type="radio" name="level" value="read"><span><strong>只读</strong><small>读取已授权分类</small></span></label>
+                <label><input type="radio" name="level" value="add"><span><strong>可读 + 新增</strong><small>新增、编辑和移分类</small></span></label>
+              </fieldset>
+              <div class="permission-category-head"><span>开放的保险柜分类</span><small>至少勾选一个</small></div>
+              <div id="apiPermissionCategoryList" class="permission-category-list"></div>
+              <label class="permission-delete"><input id="apiPermissionDelete" type="checkbox"><span><strong>允许删除</strong><small>独立于新增权限，谨慎开启</small></span></label>
+              <div class="permission-move-note" role="note">
+                <span class="permission-move-note__icon" aria-hidden="true">⇄</span>
+                <div><strong>移分类也属于「可读 + 新增」</strong><p>还需同时开放条目的原分类和目标分类；只开放目标分类不能移动。</p></div>
+              </div>
+            </div>
+          </section>
+          <section class="permission-section permission-section--skill" data-permission-section="skill">
+            <button class="permission-section__toggle" type="button" aria-expanded="false" aria-controls="permissionSkillBody">
+              <span class="permission-section__number">03</span><span class="permission-section__heading"><strong>Skill</strong><small>仓库读取与上传范围</small></span><span class="permission-section__arrow" aria-hidden="true">⌄</span>
+            </button>
+            <div id="permissionSkillBody" class="permission-section__body" hidden>
+              <div class="permission-category-head"><span>可读取分类</span><small>与保险柜权限独立</small></div>
+              <div id="apiPermissionSkillCategoryList" class="permission-category-list"></div>
+              <div class="permission-category-head permission-category-head--second"><span>可上传分类</span><small>上传自动包含读取</small></div>
+              <div id="apiPermissionSkillUploadCategoryList" class="permission-category-list"></div>
+            </div>
+          </section>
+        </div>
         <p class="form-message" data-api-permission-error role="alert"></p>
       </div>
       <div class="modal-foot"><button type="button" class="ghost-button" data-close-api-permission>暂时不要</button><button class="primary-button" type="submit"><span>保存权限</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></div>
