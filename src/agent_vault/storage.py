@@ -165,6 +165,25 @@ class LegacyVault:
             del data["records"][name]
             self._save_unlocked(data)
 
+    def delete_entry(self, entry_id: str, expected_category: str | None = None) -> dict[str, Any]:
+        entry_id = validate_entry_id(entry_id)
+        with self._lock():
+            data = self._load_unlocked()
+            if entry_id not in data["entries"]:
+                raise VaultError(f"Entry '{entry_id}' not found.")
+            category = data["entries"][entry_id].get("category") or "__other__"
+            if expected_category is not None and category != expected_category:
+                raise VaultError("Entry category changed; retry the deletion.")
+            record_names = [
+                name for name, record in data["records"].items()
+                if record.get("entry") == entry_id
+            ]
+            for name in record_names:
+                del data["records"][name]
+            del data["entries"][entry_id]
+            self._save_unlocked(data)
+            return {"id": entry_id, "deleted_records": len(record_names)}
+
     def set_entry(
         self,
         entry_id: str,

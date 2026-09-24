@@ -129,6 +129,24 @@ class SQLiteVault:
             if cursor.rowcount:
                 self._record_change(connection, "record", name, "delete", entry_id, category)
 
+    def delete_entry(self, entry_id: str, expected_category: str | None = None) -> dict[str, Any]:
+        entry_id = validate_entry_id(entry_id)
+        with self._lock(), self._connect() as connection:
+            self._create_schema(connection)
+            entry = connection.execute("SELECT category FROM entries WHERE id = ?", (entry_id,)).fetchone()
+            if entry is None:
+                raise VaultError(f"Entry '{entry_id}' not found.")
+            category = entry["category"] or "__other__"
+            if expected_category is not None and category != expected_category:
+                raise VaultError("Entry category changed; retry the deletion.")
+            records = connection.execute("SELECT name FROM records WHERE entry = ?", (entry_id,)).fetchall()
+            connection.execute("DELETE FROM records WHERE entry = ?", (entry_id,))
+            for record in records:
+                self._record_change(connection, "record", record["name"], "delete", entry_id, category)
+            connection.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+            self._record_change(connection, "entry", entry_id, "delete", None, category)
+            return {"id": entry_id, "deleted_records": len(records)}
+
     def set_entry(
         self,
         entry_id: str,

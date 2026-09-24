@@ -147,6 +147,53 @@ def test_sync_change_log_tracks_updates_and_tombstones(vault_home, fake_keyring)
     assert vault.entry_sync_revision("server_one") == changes[-1]["revision"]
 
 
+def test_delete_entry_removes_attached_secrets_and_records_sync_tombstones(vault_home, fake_keyring) -> None:
+    vault = Vault()
+    vault.init()
+    vault.set_category("servers", "Servers")
+    vault.set_entry("old_server", "old", category="servers")
+    vault.set_entry("keep_server", "keep", category="servers")
+    vault.set_secret("old_password", "test-only-one", entry="old_server")
+    vault.set_secret("old_token", "test-only-two", entry="old_server")
+    vault.set_secret("keep_password", "keep-value", entry="keep_server")
+    cursor = vault.sync_cursor()
+
+    with pytest.raises(VaultError, match="category changed"):
+        vault.delete_entry("old_server", expected_category="games")
+    assert vault.sync_cursor() == cursor
+
+    result = vault.delete_entry("old_server")
+
+    assert result == {"id": "old_server", "deleted_records": 2}
+    with pytest.raises(VaultError, match="not found"):
+        vault.get_entry("old_server")
+    with pytest.raises(VaultError, match="not found"):
+        vault.get_secret("old_password")
+    with pytest.raises(VaultError, match="not found"):
+        vault.get_secret("old_token")
+    assert vault.get_secret("keep_password")["value"] == "keep-value"
+    changes = vault.list_sync_changes(cursor)
+    assert {(change["entity_type"], change["entity_id"], change["operation"]) for change in changes} == {
+        ("record", "old_password", "delete"),
+        ("record", "old_token", "delete"),
+        ("entry", "old_server", "delete"),
+    }
+    assert all(change["category"] == "servers" for change in changes)
+
+
+def test_legacy_delete_entry_removes_attached_secrets(vault_home, fake_keyring) -> None:
+    vault = LegacyVault()
+    vault.init()
+    vault.set_entry("old_server", "old")
+    vault.set_secret("old_password", "test-only", entry="old_server")
+
+    assert vault.delete_entry("old_server") == {"id": "old_server", "deleted_records": 1}
+    with pytest.raises(VaultError, match="not found"):
+        vault.get_secret("old_password")
+    with pytest.raises(VaultError, match="not found"):
+        vault.get_entry("old_server")
+
+
 def test_api_key_is_returned_once_and_only_hash_is_persisted(vault_home, fake_keyring) -> None:
     store = ApiKeyStore(vault_home)
     store.init()

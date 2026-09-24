@@ -49,6 +49,8 @@ Authorization: Bearer avk_...
 
 浏览器管理接口（例如 `/api/snapshot` 和 `/api/api-keys`）只接受管理员会话；Agent 通过 `/api/v1/sync/*` 和 `/api/v1/skills/*` 使用 Bearer Key。Key 只能访问被授权分类，不能枚举或创建其他 Key。
 
+拥有某个内容分类删除权限的 API Key 可以调用 `DELETE /api/v1/entries/{entry_id}`，永久删除该条目及其全部秘密变量；未授权分类不能删除。后续 `pull` 会返回条目和变量的删除记录，更新后的客户端会从本地副本移除它们。已离线且尚未更新或同步的其他客户端不会被远程强制清除。
+
 本地同步客户端目前先以 CLI 形式提供：
 
 ```powershell

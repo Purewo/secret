@@ -89,6 +89,13 @@ class SyncClient:
             except VaultError:
                 pass
         revisions = config.setdefault("entry_revisions", {})
+        for tombstone in payload.get("deleted_entries", []):
+            entry_id = tombstone["id"]
+            try:
+                self.vault.delete_entry(entry_id)
+            except VaultError:
+                pass
+            revisions.pop(entry_id, None)
         for entry in payload.get("entries", []):
             if entry.get("revision") is not None:
                 revisions[entry["id"]] = entry["revision"]

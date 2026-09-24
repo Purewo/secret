@@ -10,7 +10,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from agent_vault.storage import Vault
+import pytest
+
+from agent_vault.storage import Vault, VaultError
 from agent_vault.client import SyncClient, SyncClientError
 from agent_vault.web import DEFAULT_PORT, build_server
 
@@ -658,3 +660,78 @@ def test_api_key_move_requires_access_to_both_categories(vault_home, fake_keyrin
         assert status == 200
         assert push({"id": "server_one", "description": "moved", "category": "games"})["ok"] is True
         assert vault.get_entry("server_one")["category"] == "games"
+
+
+def test_api_key_delete_entry_removes_secrets_and_syncs_local_client(vault_home, fake_keyring) -> None:
+    vault = Vault()
+    vault.init()
+    vault.set_category("servers", "Servers")
+    vault.set_category("games", "Games")
+    vault.set_entry("old_server", "to delete", category="servers")
+    vault.set_entry("keep_game", "must stay", category="games")
+    vault.set_secret("old_password", "test-only", entry="old_server")
+    vault.set_secret("keep_token", "keep-value", entry="keep_game")
+    with running_web_server() as address:
+        cookie, csrf_token = login(address)
+        status, created, _ = request_json(
+            address, "POST", "/api/api-keys", {"name": "delete-test"},
+            cookie=cookie, csrf_token=csrf_token,
+        )
+        assert status == 201
+        key = created["api_key"]
+        bearer = f"Bearer {key['api_key']}"
+        permission_path = f"/api/api-keys/{key['id']}/permissions"
+        status, _, _ = request_json(
+            address, "POST", permission_path,
+            {"categories": ["servers", "games"], "read": True, "add": False, "delete": False},
+            cookie=cookie, csrf_token=csrf_token,
+        )
+        assert status == 200
+
+        client_home = vault_home / "offline-client"
+        client = SyncClient(client_home)
+        client.configure(f"http://{address[0]}:{address[1]}", key["api_key"])
+        client.pull()
+        assert client.vault.get_secret("old_password")["value"] == "test-only"
+        cursor = client.status()["cursor"]
+
+        status, _, _ = request_json(address, "DELETE", "/api/v1/entries/old_server", authorization=bearer)
+        assert status == 403
+        assert vault.get_entry("old_server")["id"] == "old_server"
+
+        status, _, _ = request_json(
+            address, "POST", permission_path,
+            {"categories": ["games"], "read": True, "add": False, "delete": True},
+            cookie=cookie, csrf_token=csrf_token,
+        )
+        assert status == 200
+        status, _, _ = request_json(address, "DELETE", "/api/v1/entries/old_server", authorization=bearer)
+        assert status == 403
+        assert vault.get_entry("old_server")["id"] == "old_server"
+
+        status, _, _ = request_json(
+            address, "POST", permission_path,
+            {"categories": ["servers", "games"], "read": True, "add": False, "delete": True},
+            cookie=cookie, csrf_token=csrf_token,
+        )
+        assert status == 200
+        status, result, _ = request_json(address, "DELETE", "/api/v1/entries/old_server", authorization=bearer)
+        assert status == 200
+        assert result == {"id": "old_server", "deleted_records": 1}
+        assert "test-only" not in json.dumps(result)
+        with pytest.raises(VaultError, match="not found"):
+            vault.get_secret("old_password")
+        assert vault.get_secret("keep_token")["value"] == "keep-value"
+
+        status, changes, _ = request_json(
+            address, "GET", f"/api/v1/sync/pull?cursor={cursor}", authorization=bearer,
+        )
+        assert status == 200
+        assert changes["deleted_entries"] == [{"id": "old_server", "category": "servers"}]
+        assert changes["deleted_records"] == [{"name": "old_password", "entry": "old_server", "category": "servers"}]
+        client.pull()
+        with pytest.raises(VaultError, match="not found"):
+            client.vault.get_entry("old_server")
+        with pytest.raises(VaultError, match="not found"):
+            client.vault.get_secret("old_password")
+        assert client.vault.get_secret("keep_token")["value"] == "keep-value"

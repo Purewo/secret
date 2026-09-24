@@ -552,6 +552,17 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 self.server.vault.delete_secret(name)
                 self._send_json(HTTPStatus.OK, {"deleted": name})
                 return
+            if path.startswith("/api/v1/entries/"):
+                self._require_api_key_principal(principal)
+                entry_id = path[len("/api/v1/entries/") :].strip("/")
+                if not entry_id:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "条目 ID 不能为空。")
+                entry = self.server.vault.get_entry(entry_id)
+                category = self._entry_category_value(entry)
+                self._require_api_permission(principal, "delete", category)
+                result = self.server.vault.delete_entry(entry_id, expected_category=category)
+                self._send_json(HTTPStatus.OK, result)
+                return
             if path.startswith("/api/v1/secrets/"):
                 self._require_api_key_principal(principal)
                 name = path[len("/api/v1/secrets/") :].strip("/")
@@ -653,9 +664,12 @@ class VaultWebHandler(BaseHTTPRequestHandler):
         changed_entries = {change["entity_id"] for change in changes if change["entity_type"] == "entry"}
         changed_entries.update(change["parent_id"] for change in changes if change["entity_type"] == "record" and change.get("parent_id"))
         deleted_records = [change for change in changes if change["entity_type"] == "record" and change["operation"] == "delete"]
+        deleted_entries = [change for change in changes if change["entity_type"] == "entry" and change["operation"] == "delete"]
         full_pull = after_revision == 0
         entries: list[dict[str, Any]] = []
-        for public_entry in self.server.vault.list_entries():
+        current_entries = self.server.vault.list_entries()
+        current_entry_ids = {entry["id"] for entry in current_entries}
+        for public_entry in current_entries:
             if self._entry_category_value(public_entry) not in allowed and "__all__" not in allowed:
                 continue
             if not full_pull and public_entry["id"] not in changed_entries:
@@ -716,6 +730,12 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 {"name": change["entity_id"], "entry": change.get("parent_id"), "category": change["category"]}
                 for change in deleted_records
                 if change["category"] in allowed or "__all__" in allowed
+            ],
+            "deleted_entries": [
+                {"id": change["entity_id"], "category": change["category"]}
+                for change in deleted_entries
+                if change["entity_id"] not in current_entry_ids
+                and (change["category"] in allowed or "__all__" in allowed)
             ],
         }
 
