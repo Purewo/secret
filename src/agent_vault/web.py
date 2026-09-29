@@ -426,9 +426,7 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CREATED, {"category": category})
                 return
             if path in ("/api/skills/upload", "/api/v1/skills/upload"):
-                agent_upload = principal.kind == "api_key"
-                if agent_upload != (path == "/api/v1/skills/upload"):
-                    raise ApiError(HTTPStatus.FORBIDDEN, "请使用对应身份的 Skill 上传接口。")
+                allowed = self._skill_write_access(path, principal)
                 if self.headers.get("Content-Type", "").split(";", 1)[0].lower() != "application/zip":
                     raise ApiError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "请上传 ZIP 压缩包。")
                 try:
@@ -446,22 +444,28 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 category = value("category", "__other__")
                 name = value("name")
                 description = value("description")
-                if agent_upload:
-                    permissions = (principal.api_key or {}).get("permissions", {})
-                    allowed = set(permissions.get("skill_upload_categories", [])) if isinstance(permissions, dict) else set()
-                    if skill_id:
-                        existing = self.server.skills.detail(skill_id)
-                        category, name, description = existing["category"], existing["name"], existing["description"]
-                    if category not in allowed and "__all__" not in allowed:
-                        raise ApiError(HTTPStatus.FORBIDDEN, "API Key 无权上传到该 Skill 分类。")
                 created = self.server.skills.upload(
                     self.rfile, length, name=name, description=description,
                     version=value("version"), category=category,
                     skill_id=skill_id, environment_note=value("environment_note"),
                     requires_environment=None if environment == "auto" else environment == "yes",
+                    allowed=allowed,
                 )
                 self._send_json(HTTPStatus.CREATED, {"skill": created})
                 return
+            if path.startswith(("/api/skills/", "/api/v1/skills/")):
+                parts = [unquote(part) for part in path.split("/skills/", 1)[1].split("/")]
+                if len(parts) == 2 and parts[0] and parts[1] == "metadata":
+                    allowed = self._skill_write_access(path, principal)
+                    payload = self._read_json()
+                    if not payload or set(payload) - {"name", "description"}:
+                        raise ApiError(HTTPStatus.BAD_REQUEST, "仅支持更新 Skill 名称和简介，请至少提供一项。")
+                    name = self._required_string(payload, "name", 80) if "name" in payload else None
+                    description = self._required_string(payload, "description", 500) if "description" in payload else None
+                    updated = self.server.skills.update_metadata(parts[0], name=name, description=description, allowed=allowed)
+                    self._send_json(HTTPStatus.OK, {"skill": updated})
+                    return
+                raise ApiError(HTTPStatus.NOT_FOUND, "接口不存在。")
             if path == "/api/entries":
                 self._require_session_from_principal(principal)
                 payload = self._read_json()
@@ -531,6 +535,8 @@ class VaultWebHandler(BaseHTTPRequestHandler):
             raise ApiError(HTTPStatus.NOT_FOUND, "接口不存在。")
         except ApiError as exc:
             self._send_json(exc.status, {"error": exc.message})
+        except SkillAccessError as exc:
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": str(exc)})
         except VaultError as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except BrokenPipeError:
@@ -843,6 +849,18 @@ class VaultWebHandler(BaseHTTPRequestHandler):
         allowed = set(permissions.get("skill_categories", [])) if isinstance(permissions, dict) else set()
         if not allowed:
             raise ApiError(HTTPStatus.FORBIDDEN, "API Key 未授权任何 Skill 分类。")
+        return allowed
+
+    @staticmethod
+    def _skill_write_access(path: str, principal: RequestPrincipal) -> set[str] | None:
+        if (principal.kind == "api_key") != path.startswith("/api/v1/skills/"):
+            raise ApiError(HTTPStatus.FORBIDDEN, "请使用对应身份的 Skill 写入接口。")
+        if principal.kind == "session":
+            return None
+        permissions = (principal.api_key or {}).get("permissions", {})
+        allowed = set(permissions.get("skill_upload_categories", [])) if isinstance(permissions, dict) else set()
+        if not allowed:
+            raise ApiError(HTTPStatus.FORBIDDEN, "API Key 无权上传或修改任何 Skill 分类。")
         return allowed
 
     @staticmethod

@@ -76,7 +76,9 @@ agent-vault-client --profile codex pull
 
 Web 管理台的「Skill 仓库」页面可以新建分类并上传 Skill ZIP。每个 Skill 需要名称、简介和版本号；ZIP 的根目录或单一顶层目录必须包含非空 `SKILL.md`。同一个 Skill 可追加版本，旧版本保持可下载。服务端保存上传时间、下载次数、包大小、SHA-256 和运行环境提示；ZIP 上传上限为 25 MB，解压后上限为 100 MB。脚本文件会触发环境依赖提示，也可以在上传时手动指定。
 
-Skill 的元数据保存在独立的 `Skills/skills.db`，原包保存在 `Skills/packages/`。它们不写入保险柜内容数据库，也不随 `agent-vault-client pull` 同步。管理员可在 API Key 权限管理中按分类分别授权读取和上传；默认两者都不开放。已有 Skill 的新版本只能追加到原分类，Agent 不能借上传移动 Skill 分类。
+Skill 的元数据保存在独立的 `Skills/skills.db`，原包保存在 `Skills/packages/`。它们不写入保险柜内容数据库，也不随 `agent-vault-client pull` 同步。管理员可在 API Key 权限管理中按分类分别授权读取和上传；默认两者都不开放。分类上传权限也允许修改该分类内 Skill 的名称和简介，只读 Key 不能修改。已有 Skill 的新版本只能追加到原分类，Agent 不能借上传移动 Skill 分类；上传时提供名称或简介会更新对应字段，省略则保留原值。
+
+仅修改文案时使用 `skills update`，无需重新上传 ZIP 或新增版本。该接口只接受 `name`、`description`，不能修改分类、版本或包内容。Skill 简介默认使用中文，产品名可以保留原名。
 
 Agent 使用 Bearer API Key 分步查询和下载：
 
@@ -84,6 +86,7 @@ Agent 使用 Bearer API Key 分步查询和下载：
 GET /api/v1/skills/categories
 GET /api/v1/skills?category=documents
 GET /api/v1/skills/{skill_id}
+POST /api/v1/skills/{skill_id}/metadata
 GET /api/v1/skills/{skill_id}/versions/{version}/download
 POST /api/v1/skills/upload?name=...&description=...&version=...&category=...
 ```
@@ -98,6 +101,7 @@ agent-vault-client skills list --category documents
 agent-vault-client skills info SKILL_ID
 agent-vault-client skills download SKILL_ID --version 1.0.0 --out .\my-skill.zip
 agent-vault-client --profile codex skills upload .\my-skill.zip --name "My Skill" --description "简介" --version 1.0.0 --category __other__
+agent-vault-client --profile codex skills update SKILL_ID --description "通过保险柜安全管理远程服务。"
 ```
 
 存储上，内容数据使用 SQLite `vault.db`，秘密值仍由 Fernet 加密；API Key 使用独立的 `ApiKeys/api_keys.db` 和独立系统 keyring 密钥，绝不写入内容数据库。首次启动 SQLite 后会从旧 `vault.enc` 自动迁移，旧文件会保留作为迁移来源。

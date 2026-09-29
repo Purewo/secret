@@ -127,14 +127,31 @@ class SkillStore:
                 "category": skill["category"], "created_at": skill["created_at"], "updated_at": skill["updated_at"],
                 "latest_version": versions[0]["version"] if versions else None, "versions": versions}
 
+    def update_metadata(self, skill_id: str, *, name: str | None = None, description: str | None = None,
+                        allowed: set[str] | None = None) -> dict[str, Any]:
+        if name is None and description is None:
+            raise VaultError("请至少提供 Skill 名称或简介。")
+        with self._lock(), self._connect() as connection:
+            skill = connection.execute("SELECT * FROM skills WHERE id=?", (skill_id,)).fetchone()
+            if skill is None:
+                raise VaultError("Skill 不存在。")
+            if allowed is not None and skill["category"] not in allowed and "__all__" not in allowed:
+                raise SkillAccessError("API Key 无权修改该 Skill 分类。")
+            name = skill["name"] if name is None else " ".join(name.split())
+            description = skill["description"] if description is None else " ".join(description.split())
+            if not name or len(name) > 80 or not description or len(description) > 500:
+                raise VaultError("Skill 名称和简介必填，分别最多 80 和 500 个字符。")
+            connection.execute("UPDATE skills SET name=?,description=?,updated_at=? WHERE id=?",
+                               (name, description, utc_now(), skill_id))
+        return self.detail(skill_id, allowed)
+
     def upload(self, source: BinaryIO, length: int, *, name: str, description: str, version: str,
                category: str = "__other__", skill_id: str | None = None,
-               environment_note: str = "", requires_environment: bool | None = None) -> dict[str, Any]:
+               environment_note: str = "", requires_environment: bool | None = None,
+               allowed: set[str] | None = None) -> dict[str, Any]:
         name = " ".join(name.split())
         description = " ".join(description.split())
         environment_note = " ".join(environment_note.split())
-        if not name or len(name) > 80 or not description or len(description) > 500:
-            raise VaultError("Skill 名称和简介必填，分别最多 80 和 500 个字符。")
         if not VERSION_RE.fullmatch(version):
             raise VaultError("版本号格式无效。")
         if length <= 0 or length > MAX_PACKAGE_BYTES:
@@ -142,17 +159,25 @@ class SkillStore:
         if len(environment_note) > 500:
             raise VaultError("环境依赖说明过长。")
         with self._lock(), self._connect() as connection:
-            if category != "__other__" and connection.execute("SELECT 1 FROM categories WHERE id=?", (category,)).fetchone() is None:
-                raise VaultError("Skill 分类不存在。")
             is_new = skill_id is None
             if skill_id:
                 existing = connection.execute("SELECT * FROM skills WHERE id=?", (skill_id,)).fetchone()
                 if existing is None:
                     raise VaultError("Skill 不存在。")
-                if connection.execute("SELECT 1 FROM versions WHERE skill_id=? AND version=?", (skill_id, version)).fetchone():
-                    raise VaultError("该 Skill 版本已存在，请使用新的版本号。")
+                if allowed is not None:
+                    category = existing["category"]
+                    name = name or existing["name"]
+                    description = description or existing["description"]
             else:
                 skill_id = "skill_" + secrets.token_hex(10)
+            if allowed is not None and category not in allowed and "__all__" not in allowed:
+                raise SkillAccessError("API Key 无权上传到该 Skill 分类。")
+            if category != "__other__" and connection.execute("SELECT 1 FROM categories WHERE id=?", (category,)).fetchone() is None:
+                raise VaultError("Skill 分类不存在。")
+            if not name or len(name) > 80 or not description or len(description) > 500:
+                raise VaultError("Skill 名称和简介必填，分别最多 80 和 500 个字符。")
+            if not is_new and connection.execute("SELECT 1 FROM versions WHERE skill_id=? AND version=?", (skill_id, version)).fetchone():
+                raise VaultError("该 Skill 版本已存在，请使用新的版本号。")
             fd, temp_name = tempfile.mkstemp(prefix="upload-", suffix=".zip", dir=self.packages)
             temp_path = Path(temp_name)
             final_path: Path | None = None
@@ -186,7 +211,7 @@ class SkillStore:
                 if final_path is not None:
                     final_path.unlink(missing_ok=True)
                 raise
-        return self.detail(skill_id)
+        return self.detail(skill_id, allowed)
 
     @staticmethod
     def _validate_zip(path: Path) -> bool:

@@ -59,10 +59,13 @@ agent-vault-client skills categories
 agent-vault-client skills list --category CATEGORY_ID
 agent-vault-client skills info SKILL_ID
 agent-vault-client skills download SKILL_ID --version VERSION --out .\skill.zip
-agent-vault-client --profile codex skills upload .\skill.zip --name "My Skill" --description "Description" --version 1.0.0 --category __other__
+agent-vault-client --profile codex skills upload .\skill.zip --name "My Skill" --description "中文简介" --version 1.0.0 --category __other__
+agent-vault-client --profile codex skills update SKILL_ID --description "通过保险柜安全管理远程服务。"
 ```
 
 The regular `pull` command does not download Skill packages. The download command verifies the package SHA-256. Review `SKILL.md` and dependency notes before installing or executing a downloaded Skill.
+
+Write cloud Skill descriptions in Chinese by default. Use `skills update` to change a name or description without uploading another ZIP or adding a version. This requires upload permission for the Skill's existing category; read-only access is insufficient. Uploading a new version also applies supplied name/description fields and preserves omitted fields. Agent updates cannot move a Skill between categories.
 
 ## Security rules
 

@@ -205,6 +205,81 @@ def test_skill_repository_scope_metadata_and_download(vault_home, fake_keyring) 
         assert request_json(address, "GET", "/api/v1/sync/pull", authorization=auth)[0] == 200
 
 
+def test_skill_metadata_updates_respect_upload_scope_and_preserve_versions(vault_home, fake_keyring, monkeypatch, capsys) -> None:
+    from agent_vault.client import main as client_main
+
+    monkeypatch.setattr("agent_vault.web.VaultWebHandler.log_message", lambda *args: None)
+    with running_web_server() as address:
+        cookie, csrf = login(address)
+        request_json(address, "POST", "/api/skills/categories", {"id": "tools", "name": "工具"}, cookie=cookie, csrf_token=csrf)
+        archive = skill_zip()
+        _, created = upload_skill(address, cookie, csrf, archive, name="CPA", description="English description",
+                                  version="1.0.0", category="tools")
+        skill = created["skill"]
+        _, private = upload_skill(address, cookie, csrf, archive, name="Private", description="Other category", version="1.0.0")
+        private_id = private["skill"]["id"]
+        _, created_key, _ = request_json(address, "POST", "/api/api-keys", {"name": "editor"}, cookie=cookie, csrf_token=csrf)
+        key = created_key["api_key"]
+        auth = f"Bearer {key['api_key']}"
+        client = SyncClient(vault_home / "metadata-client")
+        client.configure(f"http://{address[0]}:{address[1]}", key["api_key"])
+        path = f"/api/v1/skills/{skill['id']}/metadata"
+        admin_path = f"/api/skills/{skill['id']}/metadata"
+        permissions_path = f"/api/api-keys/{key['id']}/permissions"
+        assert request_json(address, "POST", path, {"description": "中文简介"})[0] == 401
+        assert request_json(address, "POST", path, {"description": "中文简介"}, authorization=auth)[0] == 403
+        request_json(address, "POST", permissions_path, {"skill_categories": ["tools"]}, cookie=cookie, csrf_token=csrf)
+        with pytest.raises(SyncClientError, match="无权"):
+            client.update_skill(skill["id"], description="中文简介")
+        request_json(address, "POST", permissions_path, {"skill_upload_categories": ["tools"]}, cookie=cookie, csrf_token=csrf)
+        updated = client.update_skill(skill["id"], description="通过保险柜管理 CPA 服务。")["skill"]
+        assert updated["description"] == "通过保险柜管理 CPA 服务。"
+        assert updated["name"] == skill["name"]
+        assert updated["category"] == skill["category"]
+        assert updated["versions"] == skill["versions"]
+        assert client.list_skills()["skills"][0]["description"] == updated["description"]
+        with pytest.raises(SyncClientError, match="无权"):
+            client.update_skill(private_id, description="No access")
+        for invalid in ({}, {"description": ""}, {"description": "   "}, {"description": None},
+                        {"description": 123}, {"description": "长" * 501}, {"name": "名" * 81},
+                        {"category": "__other__", "description": "移出分类"}, {"version": "9.0.0"}):
+            assert request_json(address, "POST", path, invalid, authorization=auth)[0] == 400
+        assert client.skill_info(skill["id"])["skill"]["description"] == updated["description"]
+        assert request_json(address, "POST", admin_path, {"name": "Blocked"}, authorization=auth)[0] == 403
+        assert request_json(address, "POST", admin_path, {"name": "Blocked"}, cookie=cookie)[0] == 403
+        assert request_json(address, "POST", path, {"name": "Blocked"}, cookie=cookie, csrf_token=csrf)[0] == 403
+        monkeypatch.setattr("agent_vault.client.SyncClient", lambda profile: client)
+        assert client_main(["--profile", "codex", "skills", "update", skill["id"], "--name", "CPA 管理"]) == 0
+        cli_result = json.loads(capsys.readouterr().out)["skill"]
+        assert cli_result["name"] == "CPA 管理"
+        assert cli_result["description"] == updated["description"]
+        assert cli_result["versions"] == skill["versions"]
+        assert client_main(["skills", "update", skill["id"]]) == 1
+        assert "Provide a Skill name or description" in capsys.readouterr().err
+        package = vault_home / "metadata-update.zip"
+        package.write_bytes(archive)
+        published = client.upload_skill(package, skill_id=skill["id"], version="1.0.1",
+                                        name="CPA 工具", description="上传时更新的中文简介", category="__other__")["skill"]
+        assert published["name"] == "CPA 工具"
+        assert published["description"] == "上传时更新的中文简介"
+        assert published["category"] == "tools"
+        assert len(published["versions"]) == 2
+        assert published["versions"][0]["sha256"] == skill["versions"][0]["sha256"]
+        preserved = client.upload_skill(package, skill_id=skill["id"], version="1.0.2")["skill"]
+        assert preserved["name"] == published["name"]
+        assert preserved["description"] == published["description"]
+        for blocked_version in ("1.0.0", "2.0.0"):
+            with pytest.raises(SyncClientError, match="无权"):
+                client.upload_skill(package, skill_id=private_id, version=blocked_version, category="tools", description="Blocked")
+        assert request_json(address, "GET", f"/api/skills/{private_id}", cookie=cookie)[1]["skill"] == private["skill"]
+        request_json(address, "POST", permissions_path, {"skill_upload_categories": ["__all__"]}, cookie=cookie, csrf_token=csrf)
+        assert client.update_skill(private_id, description="全部分类权限可修改")["skill"]["description"] == "全部分类权限可修改"
+        admin_updated = request_json(address, "POST", admin_path, {"description": "管理员修订"}, cookie=cookie, csrf_token=csrf)
+        assert admin_updated[0] == 200
+        assert admin_updated[1]["skill"]["description"] == "管理员修订"
+        assert admin_updated[1]["skill"]["versions"] == preserved["versions"]
+
+
 def test_skill_upload_rejects_unsafe_archive(vault_home, fake_keyring) -> None:
     with running_web_server() as address:
         cookie, csrf = login(address)

@@ -145,6 +145,13 @@ class SyncClient:
     def skill_info(self, skill_id: str) -> dict[str, Any]:
         return self._request("GET", f"/api/v1/skills/{urllib.parse.quote(skill_id, safe='')}")
 
+    def update_skill(self, skill_id: str, *, name: str | None = None,
+                     description: str | None = None) -> dict[str, Any]:
+        payload = {key: value for key, value in {"name": name, "description": description}.items() if value is not None}
+        if not payload:
+            raise SyncClientError("Provide a Skill name or description to update.")
+        return self._request("POST", f"/api/v1/skills/{urllib.parse.quote(skill_id, safe='')}/metadata", payload)
+
     def download_skill(self, skill_id: str, version: str | None = None, output: Path | None = None) -> dict[str, Any]:
         detail = self.skill_info(skill_id)["skill"]
         selected = next((item for item in detail["versions"] if item["version"] == version), None) if version else next(iter(detail["versions"]), None)
@@ -267,21 +274,25 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("pull", help="Pull permitted remote data into the local vault.")
     push = sub.add_parser("push-entry", help="Push one local entry to the remote vault.")
     push.add_argument("entry_id")
-    skills = sub.add_parser("skills", help="Browse or download permitted Skills without synchronizing packages.")
+    skills = sub.add_parser("skills", help="Manage permitted Skills without synchronizing vault data.")
     skill_sub = skills.add_subparsers(dest="skill_command", required=True)
     skill_sub.add_parser("categories", help="List permitted Skill categories.")
     skill_list = skill_sub.add_parser("list", help="List permitted Skills.")
     skill_list.add_argument("--category")
     skill_info = skill_sub.add_parser("info", help="Show one Skill's versions and dependency notes.")
     skill_info.add_argument("skill_id")
+    skill_update = skill_sub.add_parser("update", help="Update a Skill name or description without uploading a package.")
+    skill_update.add_argument("skill_id")
+    skill_update.add_argument("--name")
+    skill_update.add_argument("--description")
     skill_download = skill_sub.add_parser("download", help="Download one Skill ZIP and verify SHA-256.")
     skill_download.add_argument("skill_id")
     skill_download.add_argument("--version")
     skill_download.add_argument("--out", type=Path)
     skill_upload = skill_sub.add_parser("upload", help="Upload a Skill ZIP to an authorized category.")
     skill_upload.add_argument("package", type=Path)
-    skill_upload.add_argument("--name", default="", help="Required for a new Skill.")
-    skill_upload.add_argument("--description", default="", help="Required for a new Skill.")
+    skill_upload.add_argument("--name", default="", help="Required for a new Skill; updates an existing Skill when supplied.")
+    skill_upload.add_argument("--description", default="", help="Required for a new Skill; updates an existing Skill when supplied.")
     skill_upload.add_argument("--version", required=True)
     skill_upload.add_argument("--category", default="__other__")
     skill_upload.add_argument("--environment", choices=("auto", "yes", "no"), default="auto")
@@ -311,6 +322,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result = client.list_skills(args.category)
             elif args.skill_command == "info":
                 result = client.skill_info(args.skill_id)
+            elif args.skill_command == "update":
+                result = client.update_skill(args.skill_id, name=args.name, description=args.description)
             elif args.skill_command == "download":
                 result = client.download_skill(args.skill_id, args.version, args.out)
             else:
