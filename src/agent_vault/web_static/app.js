@@ -54,6 +54,10 @@ const apiKeyPermissionForm = document.querySelector("#apiKeyPermissionForm");
 const passwordForm = document.querySelector("#passwordForm");
 const secretEntrySelect = document.querySelector("#secretEntry");
 const secretValue = document.querySelector("#secretValue");
+const entryTemplate = document.querySelector("#entryTemplate");
+const accountTemplateFields = document.querySelector("#accountTemplateFields");
+const accountCustomFields = document.querySelector("#accountCustomFields");
+const addAccountFieldButton = document.querySelector("#addAccountField");
 const searchInput = document.querySelector("#searchInput");
 const variableSearchInput = document.querySelector("#variableSearchInput");
 
@@ -950,10 +954,93 @@ function setPersonalTab(tab) {
 
 function openEntryDialog() {
   entryForm.reset();
+  accountCustomFields.replaceChildren();
+  setAccountTemplateVisibility();
   clearFormError(entryForm);
   populateCategoryOptions(document.querySelector("#entryCategory"), "__other__");
   entryDialog.showModal();
   window.setTimeout(() => entryForm.elements.id.focus(), 50);
+}
+
+function setAccountTemplateVisibility() {
+  const enabled = entryTemplate.value === "account";
+  accountTemplateFields.hidden = !enabled;
+  [entryForm.elements.account, entryForm.elements.account_password, entryForm.elements.account_2fa]
+    .forEach((input) => { input.disabled = !enabled; });
+  entryForm.elements.account.required = enabled;
+  entryForm.elements.account_password.required = enabled;
+  accountCustomFields.querySelectorAll("input").forEach((input) => { input.disabled = !enabled; });
+}
+
+function addAccountCustomField() {
+  const row = createElement("div", "template-custom-field");
+  const keyLabel = createElement("label", "field");
+  keyLabel.append(createElement("span", "", "其他信息名称"));
+  const keyWrap = createElement("span", "input-wrap");
+  const keyInput = createElement("input");
+  keyInput.type = "text";
+  keyInput.name = "template_field_name";
+  keyInput.dataset.templateFieldKey = "true";
+  keyInput.placeholder = "例如 recovery_code";
+  keyInput.pattern = "[A-Za-z_][A-Za-z0-9_]*";
+  keyInput.maxLength = 80;
+  keyInput.required = true;
+  keyWrap.append(keyInput);
+  keyLabel.append(keyWrap);
+
+  const valueLabel = createElement("label", "field");
+  valueLabel.append(createElement("span", "", "信息内容"));
+  const valueWrap = createElement("span", "input-wrap");
+  const valueInput = createElement("input");
+  valueInput.type = "password";
+  valueInput.name = "template_field_value";
+  valueInput.autocomplete = "off";
+  valueInput.dataset.templateFieldValue = "true";
+  valueInput.placeholder = "输入要加密保存的内容";
+  valueInput.required = true;
+  valueWrap.append(valueInput);
+  valueLabel.append(valueWrap);
+
+  const remove = createElement("button", "template-remove-field", "删除");
+  remove.type = "button";
+  remove.addEventListener("click", () => row.remove());
+  row.append(keyLabel, valueLabel, remove);
+  accountCustomFields.append(row);
+  setAccountTemplateVisibility();
+  keyInput.focus();
+}
+
+function templateVariableName(entryId, key) {
+  return `${entryId.replace(/-/g, "_")}_${key}`;
+}
+
+function collectAccountTemplateSecrets(entryId) {
+  if (entryTemplate.value !== "account") return [];
+  const fields = [
+    { key: "account", value: entryForm.elements.account.value, note: "账号" },
+    { key: "password", value: entryForm.elements.account_password.value, note: "密码" },
+  ];
+  if (entryForm.elements.account_2fa.value.trim()) {
+    fields.push({ key: "2fa", value: entryForm.elements.account_2fa.value, note: "2FA" });
+  }
+  accountCustomFields.querySelectorAll(".template-custom-field").forEach((row) => {
+    const key = row.querySelector("[data-template-field-key]").value.trim();
+    const value = row.querySelector("[data-template-field-value]").value;
+    fields.push({ key, value, note: key });
+  });
+  const names = new Set();
+  const secrets = fields.map((field) => {
+    const name = templateVariableName(entryId, field.key);
+    if (field.key !== "2fa" && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(field.key)) {
+      throw new Error("其他信息名称只能使用字母、数字和下划线，并且不能以数字开头。");
+    }
+    const normalizedName = name.toLocaleLowerCase("en-US");
+    if (names.has(normalizedName)) throw new Error(`模板字段“${field.key}”重复，请修改后再试。`);
+    names.add(normalizedName);
+    if (!field.value) throw new Error(`请填写“${field.note}”。`);
+    return { name, value: field.value, note: field.note };
+  });
+  return secrets;
 }
 
 function openSecretDialog(entryId = "") {
@@ -1165,7 +1252,9 @@ entryForm.addEventListener("submit", async (event) => {
   const button = entryForm.querySelector("button[type='submit']");
   setLoading(button, true);
   const entryId = entryForm.elements.id.value.trim();
+  let templateSecrets;
   try {
+    templateSecrets = collectAccountTemplateSecrets(entryId);
     await api("/api/entries", {
       method: "POST",
       body: JSON.stringify({
@@ -1175,9 +1264,24 @@ entryForm.addEventListener("submit", async (event) => {
         tags: normalizeTags(entryForm.elements.tags.value),
       }),
     });
+    for (const secret of templateSecrets) {
+      await api("/api/secrets", {
+        method: "POST",
+        body: JSON.stringify({
+          name: secret.name,
+          value: secret.value,
+          entry: entryId,
+          tags: [],
+          note: secret.note,
+        }),
+      });
+    }
     closeDialog(entryDialog);
     await loadSnapshot();
-    toast("条目创建成功", "现在可以在详情里添加变量。");
+    toast(
+      "条目创建成功",
+      templateSecrets.length ? `账号模板已保存 ${templateSecrets.length} 个加密变量。` : "现在可以在详情里添加变量。",
+    );
     window.setTimeout(() => openDetail(entryId), 220);
   } catch (error) {
     showFormError(entryForm, error.message);
@@ -1475,6 +1579,9 @@ document.querySelectorAll("[data-toggle-password]").forEach((button) => {
     button.setAttribute("aria-pressed", String(reveal));
   });
 });
+
+entryTemplate.addEventListener("change", setAccountTemplateVisibility);
+addAccountFieldButton.addEventListener("click", addAccountCustomField);
 
 document.querySelector("[data-toggle-secret]").addEventListener("click", (event) => {
   const reveal = secretValue.classList.toggle("is-masked") === false;

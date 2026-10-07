@@ -1987,6 +1987,108 @@ svg {
   grid-column: 1 / -1;
 }
 
+.template-fields {
+  display: grid;
+  gap: 18px;
+  margin-top: 2px;
+  padding: 18px;
+  border: 1px solid rgba(52, 150, 119, 0.2);
+  border-radius: 21px;
+  background: linear-gradient(145deg, rgba(228, 251, 235, 0.74), rgba(236, 249, 255, 0.68));
+}
+
+.template-fields__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.template-fields__heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.template-fields__heading strong {
+  font-family: var(--display);
+  font-size: 18px;
+}
+
+.template-fields__heading small {
+  max-width: 220px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.template-fields__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+
+.template-fields__grid .field--wide {
+  grid-column: 1 / -1;
+}
+
+.template-custom-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.template-custom-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(42, 91, 86, 0.18);
+}
+
+.template-custom-field .field {
+  margin: 0;
+}
+
+.template-remove-field {
+  min-height: 43px;
+  padding: 0 10px;
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.template-remove-field:hover {
+  color: #b0524a;
+  background: rgba(255, 125, 109, 0.12);
+}
+
+.template-add-field {
+  justify-self: start;
+  display: inline-flex;
+  min-height: 38px;
+  padding: 0 13px;
+  align-items: center;
+  gap: 7px;
+  border: 1px dashed rgba(31, 133, 103, 0.42);
+  border-radius: 12px;
+  color: #177e65;
+  background: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.template-add-field span {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.template-add-field:hover {
+  border-color: rgba(31, 133, 103, 0.72);
+  background: rgba(255, 255, 255, 0.9);
+}
+
 .input-wrap--secret {
   min-height: 98px;
   align-items: flex-start;
@@ -4368,6 +4470,16 @@ html:has(.api-key-permission-dialog[open]) {
 .skill-version-hash { max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Consolas, monospace; }
 .skill-download { flex: 0 0 auto; padding: 10px 14px; border-radius: 13px; background: var(--lime); color: var(--ink); font-size: 13px; font-weight: 800; text-decoration: none; }
 @media (max-width: 700px) { .skill-hero { align-items: flex-start; flex-wrap: wrap; padding: 18px; } .skill-hero > span { display: none; } .skill-toolbar { align-items: stretch; flex-direction: column; } .skill-upload-fields { grid-template-columns: 1fr; } .skill-upload-fields .field--wide { grid-column: auto; } .skill-file { flex-wrap: wrap; padding: 17px; } .skill-file__action { width: 100%; justify-content: center; } }
+
+@media (max-width: 560px) {
+  .template-fields { padding: 15px; }
+  .template-fields__heading { display: grid; gap: 7px; }
+  .template-fields__heading small { max-width: none; text-align: left; }
+  .template-fields__grid { grid-template-columns: 1fr; }
+  .template-fields__grid .field--wide { grid-column: auto; }
+  .template-custom-field { grid-template-columns: 1fr; gap: 0; }
+  .template-remove-field { justify-self: start; margin: -3px 0 10px; }
+}
 
 .settings-card,
 .settings-note {
