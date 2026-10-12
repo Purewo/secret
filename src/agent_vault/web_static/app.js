@@ -784,6 +784,121 @@ async function openSkillDetail(id) {
 
 let skillPreviewRequest = 0;
 const skillPreviewDialog = document.querySelector("#skillPreviewDialog");
+
+function escapeMarkdownHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderMarkdownInline(value) {
+  const tokens = [];
+  const token = (html) => {
+    const marker = `\u0000${tokens.length}\u0000`;
+    tokens.push(html);
+    return marker;
+  };
+  let html = escapeMarkdownHtml(value);
+  html = html.replace(/`([^`\n]+)`/g, (_, code) => token(`<code>${code}</code>`));
+  html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) => {
+    if (!/^(?:https?:\/\/|mailto:)/i.test(url)) return label;
+    return token(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+  });
+  html = html.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
+  html = html.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
+  html = html.replace(/_([^_\n]+)_/g, "<em>$1</em>");
+  return html.replace(/\u0000(\d+)\u0000/g, (_, index) => tokens[Number(index)]);
+}
+
+function renderMarkdown(markdown) {
+  const lines = String(markdown || "").replace(/\r\n?/g, "\n").split("\n");
+  const output = [];
+  let paragraph = [];
+  let listType = null;
+  let inCode = false;
+  let codeLines = [];
+
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      output.push(`<p>${paragraph.map(renderMarkdownInline).join("<br>")}</p>`);
+      paragraph = [];
+    }
+  };
+  const closeList = () => {
+    if (listType) {
+      output.push(`</${listType}>`);
+      listType = null;
+    }
+  };
+  const flushBlocks = () => {
+    flushParagraph();
+    closeList();
+  };
+
+  for (const line of lines) {
+    const fence = line.match(/^\s*```(?:[^`]*)$/);
+    if (fence) {
+      if (inCode) {
+        output.push(`<pre><code>${escapeMarkdownHtml(codeLines.join("\n"))}</code></pre>`);
+        codeLines = [];
+        inCode = false;
+      } else {
+        flushBlocks();
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+    if (!line.trim()) {
+      flushBlocks();
+      continue;
+    }
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      flushBlocks();
+      const level = heading[1].length;
+      output.push(`<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`);
+      continue;
+    }
+    if (/^\s{0,3}(?:\*\s*){3,}$/.test(line) || /^\s{0,3}(?:-\s*){3,}$/.test(line)) {
+      flushBlocks();
+      output.push("<hr>");
+      continue;
+    }
+    const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      flushParagraph();
+      const nextType = ordered ? "ol" : "ul";
+      if (listType !== nextType) {
+        closeList();
+        listType = nextType;
+        output.push(`<${listType}>`);
+      }
+      output.push(`<li>${renderMarkdownInline((ordered || unordered)[1])}</li>`);
+      continue;
+    }
+    const quote = line.match(/^\s*>\s?(.*)$/);
+    if (quote) {
+      flushBlocks();
+      output.push(`<blockquote>${renderMarkdownInline(quote[1])}</blockquote>`);
+      continue;
+    }
+    closeList();
+    paragraph.push(line);
+  }
+  if (inCode) output.push(`<pre><code>${escapeMarkdownHtml(codeLines.join("\n"))}</code></pre>`);
+  flushBlocks();
+  return output.join("");
+}
+
 skillPreviewDialog.addEventListener("close", () => {
   skillPreviewRequest += 1;
   document.querySelector("#skillPreviewContent").textContent = "";
@@ -801,7 +916,7 @@ async function openSkillPreview(skill, version) {
     const result = await api(`/api/skills/${encodeURIComponent(skill.id)}/versions/${encodeURIComponent(version)}/preview`);
     if (request !== skillPreviewRequest || !skillPreviewDialog.open) return;
     document.querySelector("#skillPreviewInfo").textContent = `${skill.name} · v${version} · ${result.path}`;
-    content.textContent = result.content;
+    content.innerHTML = renderMarkdown(result.content);
     status.textContent = "";
   } catch (error) {
     if (request === skillPreviewRequest && skillPreviewDialog.open) status.textContent = error.message;
