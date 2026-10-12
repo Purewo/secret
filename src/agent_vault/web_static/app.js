@@ -822,6 +822,24 @@ function renderMarkdown(markdown) {
   let inCode = false;
   let codeLines = [];
 
+  if (lines[0]?.trim() === "---") {
+    const closing = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+    if (closing > 0) {
+      const metadata = lines.slice(1, closing)
+        .map((line) => line.match(/^\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*)\s*$/))
+        .filter(Boolean);
+      if (metadata.length) {
+        output.push('<section class="skill-frontmatter" aria-label="Skill 元数据">');
+        metadata.forEach(([, key, value]) => {
+          const isDescription = key.toLowerCase() === "description";
+          output.push(`<div class="skill-frontmatter__item${isDescription ? " skill-frontmatter__item--description" : ""}"><span>${escapeMarkdownHtml(key)}</span>${isDescription ? `<p>${renderMarkdownInline(value)}</p>` : `<strong>${renderMarkdownInline(value)}</strong>`}</div>`);
+        });
+        output.push("</section>");
+        lines.splice(0, closing + 1);
+      }
+    }
+  }
+
   const flushParagraph = () => {
     if (paragraph.length) {
       output.push(`<p>${paragraph.map(renderMarkdownInline).join("<br>")}</p>`);
