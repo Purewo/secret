@@ -289,6 +289,9 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 allowed = self._skill_access(path)
                 tail = path.split("/skills/", 1)[1]
                 parts = [unquote(part) for part in tail.split("/")]
+                if len(parts) == 4 and parts[1] == "versions" and parts[3] == "preview":
+                    self._send_json(HTTPStatus.OK, self.server.skills.preview(parts[0], parts[2], allowed))
+                    return
                 if len(parts) == 4 and parts[1] == "versions" and parts[3] == "download":
                     archive, digest = self.server.skills.download(parts[0], parts[2], allowed)
                     self._send_skill_file(archive, digest)

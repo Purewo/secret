@@ -95,6 +95,60 @@ def test_default_web_port_is_2005() -> None:
     assert DEFAULT_PORT == 2005
 
 
+def test_skill_preview_is_versioned_read_only_and_scoped(vault_home, fake_keyring) -> None:
+    with running_web_server() as address:
+        cookie, csrf = login(address)
+        texts = ["# First\n<script>alert('preview')</script>", "# Second\n只读预览"]
+        skill_id = None
+        for version, content in zip(("1.0.0", "2.0.0"), texts):
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                archive.writestr("example/SKILL.md", content)
+            fields = {"name": "Preview", "description": "Preview test", "version": version}
+            if skill_id:
+                fields["skill_id"] = skill_id
+            status, result = upload_skill(address, cookie, csrf, buffer.getvalue(), **fields)
+            assert status == 201
+            skill_id = result["skill"]["id"]
+        path = f"/api/skills/{skill_id}/versions/1.0.0/preview"
+        assert request_json(address, "GET", path)[0] == 401
+        for version, content in zip(("1.0.0", "2.0.0"), texts):
+            status, preview, headers = request_json(address, "GET", path.replace("1.0.0", version), cookie=cookie)
+            assert status == 200
+            assert preview == {"version": version, "path": "example/SKILL.md", "content": content}
+            assert headers["Cache-Control"] == "no-store"
+        assert request_json(address, "GET", path.replace("1.0.0", "missing"), cookie=cookie)[0] == 400
+        detail = request_json(address, "GET", f"/api/skills/{skill_id}", cookie=cookie)[1]["skill"]
+        assert all(item["download_count"] == 0 for item in detail["versions"])
+        assert request_json(address, "POST", path, {"content": "changed"}, cookie=cookie, csrf_token=csrf)[0] == 404
+        _, result, _ = request_json(address, "POST", "/api/api-keys", {"name": "preview-reader"}, cookie=cookie, csrf_token=csrf)
+        key = result["api_key"]
+        auth = f"Bearer {key['api_key']}"
+        api_path = path.replace("/api/skills/", "/api/v1/skills/")
+        assert request_json(address, "GET", api_path, authorization=auth)[0] == 403
+        request_json(address, "POST", f"/api/api-keys/{key['id']}/permissions", {"skill_categories": ["__other__"]}, cookie=cookie, csrf_token=csrf)
+        assert request_json(address, "GET", api_path, authorization=auth)[1]["content"] == texts[0]
+        assert request_json(address, "GET", path, authorization=auth)[0] == 403
+
+
+@pytest.mark.parametrize("files", [
+    {"SKILL.md": b"x" * (1024 * 1024 + 1)},
+    {"SKILL.md": b"\xff\xfe"},
+    {"one/SKILL.md": b"one", "two/SKILL.md": b"two"},
+])
+def test_skill_preview_rejects_unreadable_documents(vault_home, fake_keyring, files) -> None:
+    with running_web_server() as address:
+        cookie, csrf = login(address)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, content in files.items():
+                archive.writestr(name, content)
+        status, result = upload_skill(address, cookie, csrf, buffer.getvalue(), name="Preview", description="test", version="1")
+        assert status == 201
+        path = f"/api/skills/{result['skill']['id']}/versions/1/preview"
+        assert request_json(address, "GET", path, cookie=cookie)[0] == 400
+
+
 def test_skill_repository_scope_metadata_and_download(vault_home, fake_keyring) -> None:
     with running_web_server() as address:
         cookie, csrf = login(address)

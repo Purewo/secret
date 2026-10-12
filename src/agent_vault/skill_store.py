@@ -21,6 +21,7 @@ from .storage import VaultError, default_vault_home, utc_now
 MAX_PACKAGE_BYTES = 25 * 1024 * 1024
 MAX_UNPACKED_BYTES = 100 * 1024 * 1024
 MAX_ZIP_FILES = 1000
+MAX_PREVIEW_BYTES = 1024 * 1024
 VERSION_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,63}\Z")
 CATEGORY_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,79}\Z")
 
@@ -244,6 +245,38 @@ class SkillStore:
                 return needs_environment
         except zipfile.BadZipFile as exc:
             raise VaultError("文件不是有效 ZIP 压缩包。") from exc
+
+    def preview(self, skill_id: str, version: str, allowed: set[str] | None = None) -> dict[str, str]:
+        """Read the version's entry document without extracting or recording a download."""
+        with self._lock(), self._connect() as connection:
+            row = connection.execute("""SELECT s.category,v.package_path FROM skills s JOIN versions v ON v.skill_id=s.id
+                                        WHERE s.id=? AND v.version=?""", (skill_id, version)).fetchone()
+            if row is None:
+                raise VaultError("Skill 版本不存在。")
+            if allowed is not None and row["category"] not in allowed and "__all__" not in allowed:
+                raise SkillAccessError("API Key 无权访问该 Skill 分类。")
+            try:
+                with zipfile.ZipFile(self.packages / row["package_path"]) as archive:
+                    candidates = []
+                    for item in archive.infolist():
+                        parts = PurePosixPath(item.filename.replace("\\", "/")).parts
+                        if not item.is_dir() and item.file_size > 0 and len(parts) in (1, 2) and parts[-1].lower() == "skill.md":
+                            candidates.append(item)
+                    if len(candidates) != 1:
+                        raise VaultError("包内 SKILL.md 缺失或不唯一，无法预览。")
+                    item = candidates[0]
+                    if item.file_size > MAX_PREVIEW_BYTES:
+                        raise VaultError("SKILL.md 超过 1 MB，请下载 ZIP 查看。")
+                    with archive.open(item) as stream:
+                        raw = stream.read(MAX_PREVIEW_BYTES + 1)
+                    if len(raw) > MAX_PREVIEW_BYTES:
+                        raise VaultError("SKILL.md 超过 1 MB，请下载 ZIP 查看。")
+                    content = raw.decode("utf-8-sig")
+            except UnicodeDecodeError as exc:
+                raise VaultError("SKILL.md 不是 UTF-8 文本，请下载 ZIP 查看。") from exc
+            except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
+                raise VaultError("无法读取 Skill 压缩包，请检查文件是否完整。") from exc
+        return {"version": version, "path": item.filename, "content": content}
 
     def download(self, skill_id: str, version: str, allowed: set[str] | None = None) -> tuple[Path, str]:
         with self._lock(), self._connect() as connection:

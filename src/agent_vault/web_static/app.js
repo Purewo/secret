@@ -765,12 +765,46 @@ async function openSkillDetail(id) {
       const download = createElement("a", "skill-download", "下载 ZIP ↓");
       download.href = version.download_url;
       download.download = `${skill.name}-${version.version}.zip`;
-      row.append(info, download);
+      const actions = createElement("div", "skill-version-actions");
+      const preview = createElement("button", "skill-preview-button");
+      preview.type = "button";
+      preview.title = `预览 v${version.version} 的 SKILL.md（只读）`;
+      preview.setAttribute("aria-label", preview.title);
+      preview.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg>';
+      preview.addEventListener("click", () => openSkillPreview(skill, version.version));
+      actions.append(preview, download);
+      row.append(info, actions);
       body.append(row);
     });
     skillDetailDialog.showModal();
   } catch (error) {
     toast("获取 Skill 详情失败", error.message, "error");
+  }
+}
+
+let skillPreviewRequest = 0;
+const skillPreviewDialog = document.querySelector("#skillPreviewDialog");
+skillPreviewDialog.addEventListener("close", () => {
+  skillPreviewRequest += 1;
+  document.querySelector("#skillPreviewContent").textContent = "";
+});
+
+async function openSkillPreview(skill, version) {
+  const request = ++skillPreviewRequest;
+  const content = document.querySelector("#skillPreviewContent");
+  const status = document.querySelector("#skillPreviewStatus");
+  document.querySelector("#skillPreviewInfo").textContent = `${skill.name} · v${version}`;
+  content.textContent = "";
+  status.textContent = "正在读取 SKILL.md…";
+  skillPreviewDialog.showModal();
+  try {
+    const result = await api(`/api/skills/${encodeURIComponent(skill.id)}/versions/${encodeURIComponent(version)}/preview`);
+    if (request !== skillPreviewRequest || !skillPreviewDialog.open) return;
+    document.querySelector("#skillPreviewInfo").textContent = `${skill.name} · v${version} · ${result.path}`;
+    content.textContent = result.content;
+    status.textContent = "";
+  } catch (error) {
+    if (request === skillPreviewRequest && skillPreviewDialog.open) status.textContent = error.message;
   }
 }
 
