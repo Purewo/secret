@@ -4491,6 +4491,43 @@ html:has(.api-key-permission-dialog[open]) {
   .template-remove-field { justify-self: start; margin: -3px 0 10px; }
 }
 
+/* Keep scrolling on the main thread light: these layers stay visually rich
+   through their colors and shadows without recomputing a full-page blur. */
+.ambient .orb {
+  animation: none;
+}
+
+.ambient .grain {
+  opacity: 0.08;
+  mix-blend-mode: normal;
+}
+
+.glass,
+.topbar,
+.modal,
+.detail-drawer,
+.toast,
+.personal-tabs,
+.skill-upload-dialog .modal-head,
+.skill-upload-dialog .modal-foot {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.modal::backdrop,
+.detail-drawer::backdrop {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.topbar {
+  background: rgba(247, 251, 243, 0.96);
+}
+
 .settings-card,
 .settings-note {
   border-radius: var(--radius-xl);
