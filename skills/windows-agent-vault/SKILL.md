@@ -1,23 +1,23 @@
 ---
 name: windows-agent-vault
-description: Use the local Agent Vault for passwords, API keys, server credentials, accounts, tokens, and other sensitive data without exposing plaintext. Trigger when the user mentions the secret vault, stored credentials, saved servers/accounts, or asks an agent to use a secret by variable name.
+description: 使用本地 Agent Vault 安全管理密码、API Key、服务器凭据、账号、Token 等敏感数据，避免暴露明文。用户提到保险柜、已保存的凭据、服务器或账号，或要求 Agent 通过变量名使用秘密时使用。
 ---
 
 # Windows Agent Vault
 
-This skill ships with the Agent Vault repository. The encrypted vault lives outside the repository in the user's Agent Vault data directory; its data key is stored in the operating system credential store when available.
+本 Skill 随 Agent Vault 仓库提供。加密保险柜保存在仓库之外的用户 Agent Vault 数据目录中；操作系统凭据库可用时，数据密钥由该凭据库保管。
 
-Run the bundled wrapper from the repository checkout:
+在仓库检出目录中运行附带的封装脚本：
 
 ```powershell
 & "<repo>\skills\windows-agent-vault\scripts\agent-vault.ps1" entry list
 ```
 
-The wrapper resolves the repository root from its own location and invokes the local `agent-vault` command through `uv`.
+封装脚本根据自身位置定位仓库根目录，再通过 `uv` 调用本地 `agent-vault` 命令。
 
-## Discovery
+## 查找资源
 
-Use the least revealing command that answers the request:
+优先使用能够满足需求、披露信息最少的命令：
 
 ```powershell
 agent-vault entry list
@@ -26,9 +26,9 @@ agent-vault list
 agent-vault get VARIABLE_NAME
 ```
 
-These commands show metadata and variable names. They do not reveal secret values.
+以上命令只显示元数据和变量名，不显示秘密值。
 
-## Store and organize
+## 保存与整理
 
 ```powershell
 agent-vault entry set ENTRY_ID --description "public description" --tag server
@@ -36,23 +36,23 @@ agent-vault set VARIABLE_NAME --note "public note" --tag server
 agent-vault entry assign ENTRY_ID VARIABLE_NAME
 ```
 
-Use `--value-stdin` only when real stdin provides the value. Never paste a revealed secret into chat, logs, documentation, tests, or commits.
+只有标准输入确实提供了秘密值时，才使用 `--value-stdin`。切勿将已读取的秘密明文粘贴到聊天、日志、文档、测试或提交记录中。
 
-## Consume secrets
+## 使用秘密
 
-Prefer environment injection:
+优先通过环境变量注入：
 
 ```powershell
 agent-vault run VARIABLE_NAME -- COMMAND ARGUMENTS
 ```
 
-The child process receives the variable without the vault CLI printing its value. Do not echo or serialize the injected environment variable.
+子进程会收到对应的环境变量，保险柜 CLI 不会打印变量值。子进程也不得回显或序列化这些注入的环境变量。
 
-For a saved SSH server, inspect entry metadata first. When the local `ssh-remote` skill is installed, prefer its entry-ID helper: it resolves only the selected SSH variables in process and verifies the host key before authentication. Otherwise use `agent-vault run` with selected variable names and a host-key-verified SSH workflow.
+连接已保存的 SSH 服务器前，先检查条目元数据。如果本机已安装 `ssh-remote` Skill，优先使用其按条目 ID 连接的辅助工具：它只在进程内读取选定的 SSH 变量，并在身份认证前验证主机密钥。否则，通过 `agent-vault run` 注入选定的变量，并使用已验证主机密钥的 SSH 流程。
 
-## Remote Skill library
+## 云端 Skill 库
 
-When the local sync client has a Base URL and API Key configured, discover only authorized Skills on demand:
+本地同步客户端配置好 Base URL 和 API Key 后，可按需查询有权访问的 Skill：
 
 ```powershell
 agent-vault-client skills categories
@@ -63,13 +63,13 @@ agent-vault-client --profile codex skills upload .\skill.zip --name "My Skill" -
 agent-vault-client --profile codex skills update SKILL_ID --description "通过保险柜安全管理远程服务。"
 ```
 
-The regular `pull` command does not download Skill packages. The download command verifies the package SHA-256. Review `SKILL.md` and dependency notes before installing or executing a downloaded Skill.
+普通 `pull` 命令不会下载 Skill 包。下载命令会校验包的 SHA-256。安装或执行下载的 Skill 前，应先检查 `SKILL.md` 和环境依赖说明。
 
-Write cloud Skill descriptions in Chinese by default. Use `skills update` to change a name or description without uploading another ZIP or adding a version. This requires upload permission for the Skill's existing category; read-only access is insufficient. Uploading a new version also applies supplied name/description fields and preserves omitted fields. Agent updates cannot move a Skill between categories.
+云端 Skill 简介默认使用中文。只修改名称或简介时，使用 `skills update`，无需重新上传 ZIP 或新增版本。此操作需要该 Skill 所属分类的上传权限，仅有读取权限不够。上传新版本时，提供的名称和简介也会更新，未提供的字段保持原值。Agent 不能通过更新操作将 Skill 移动到其他分类。
 
-## Security rules
+## 安全规则
 
-- Do not use `get --reveal` unless the user explicitly requests plaintext or injection cannot complete the task.
-- Keep credentials in the operating system vault or keyring, never in repository files.
-- Treat entry descriptions, tags, variable names, and notes as public metadata.
-- Use `agent-vault doctor` for diagnostics; it does not print secret values.
+- 除非用户明确要求查看明文，或环境变量注入无法完成任务，否则不要使用 `get --reveal`。
+- 凭据应保存在操作系统保险柜或 keyring 中，不要写入仓库文件。
+- 条目描述、标签、变量名和备注均视为公开元数据，不得包含秘密值。
+- 使用 `agent-vault doctor` 进行诊断；它不会打印秘密值。
