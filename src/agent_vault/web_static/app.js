@@ -1307,7 +1307,7 @@ async function renderAccountTemplateCard(parts) {
   const container = document.querySelector("#detailVariableList");
   const card = createElement("section", "account-preview-card");
   const accountValue = createElement("strong", "account-preview__account", "读取中…");
-  card.append(createElement("span", "account-preview__kicker", "ACCOUNT"), accountValue, createElement("small", "account-preview__hint", "账号默认显示，密码保持隐藏"));
+  card.append(createElement("span", "account-preview__kicker", "账号"), accountValue, createElement("small", "account-preview__hint", "账号默认显示，密码保持隐藏"));
   container.prepend(card);
   try {
     const account = await requestSecretValue(parts.account.name);
@@ -1336,7 +1336,7 @@ async function renderAccountTemplateCard(parts) {
         const result = await generateTotp(twoFactorSecret);
         if (!card.isConnected) return;
         code.textContent = result.code;
-        countdown.textContent = `${result.remaining}s 后刷新`;
+        countdown.textContent = `${result.remaining}s 后过期`;
       } catch (error) {
         code.textContent = "不可用";
         countdown.textContent = "请检查 2FA 密钥格式";
