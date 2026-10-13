@@ -57,6 +57,9 @@ const passwordForm = document.querySelector("#passwordForm");
 const secretEntrySelect = document.querySelector("#secretEntry");
 const secretValue = document.querySelector("#secretValue");
 const entryTemplate = document.querySelector("#entryTemplate");
+const entryIdField = document.querySelector("#entryIdField");
+const entryDescriptionField = document.querySelector("#entryDescriptionField");
+const entryTemplateField = document.querySelector("#entryTemplateField");
 const accountTemplateFields = document.querySelector("#accountTemplateFields");
 const accountCustomFields = document.querySelector("#accountCustomFields");
 const addAccountFieldButton = document.querySelector("#addAccountField");
@@ -1218,9 +1221,27 @@ function openEntryDialog() {
   window.setTimeout(() => entryForm.elements.id.focus(), 50);
 }
 
+function accountEntryId(value) {
+  const normalized = String(value || "").trim().toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return `account_${normalized || "entry"}`.slice(0, 80);
+}
+
 function setAccountTemplateVisibility() {
   const enabled = entryTemplate.value === "account";
   accountTemplateFields.hidden = !enabled;
+  entryIdField.hidden = enabled;
+  entryForm.elements.id.disabled = enabled;
+  entryForm.elements.id.required = !enabled;
+  entryDescriptionField.querySelector("[data-entry-description-required]").hidden = enabled;
+  entryForm.elements.description.required = !enabled;
+  if (enabled) {
+    entryForm.elements.id.value = accountEntryId(entryForm.elements.account.value);
+    entryDescriptionField.before(entryTemplateField);
+    entryDescriptionField.before(accountTemplateFields);
+  } else {
+    document.querySelector("#entryTagsField").after(entryTemplateField);
+    entryTemplateField.after(accountTemplateFields);
+  }
   [entryForm.elements.account, entryForm.elements.account_password, entryForm.elements.account_2fa]
     .forEach((input) => { input.disabled = !enabled; });
   entryForm.elements.account.required = enabled;
@@ -1626,6 +1647,7 @@ entryForm.addEventListener("submit", async (event) => {
   const button = entryForm.querySelector("button[type='submit']");
   setLoading(button, true);
   const entryId = entryForm.elements.id.value.trim();
+  const template = entryTemplate.value;
   let templateSecrets;
   try {
     templateSecrets = collectAccountTemplateSecrets(entryId);
@@ -1633,7 +1655,7 @@ entryForm.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify({
         id: entryId,
-        description: entryForm.elements.description.value.trim(),
+        description: entryForm.elements.description.value.trim() || (template === "account" ? "账号模板" : ""),
         category: entryForm.elements.category.value === "__other__" ? "" : entryForm.elements.category.value,
         tags: normalizeTags(entryForm.elements.tags.value),
       }),
@@ -1955,6 +1977,9 @@ document.querySelectorAll("[data-toggle-password]").forEach((button) => {
 });
 
 entryTemplate.addEventListener("change", setAccountTemplateVisibility);
+entryForm.elements.account.addEventListener("input", () => {
+  if (entryTemplate.value === "account") entryForm.elements.id.value = accountEntryId(entryForm.elements.account.value);
+});
 addAccountFieldButton.addEventListener("click", addAccountCustomField);
 
 document.querySelector("[data-toggle-secret]").addEventListener("click", (event) => {

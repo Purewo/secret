@@ -329,13 +329,13 @@
         <button type="button" class="icon-button" data-close-dialog aria-label="关闭">×</button>
       </div>
       <div class="modal-body">
-        <label class="field"><span>条目标识 <b>必填</b></span><span class="input-wrap"><input name="id" autocomplete="off" placeholder="例如 japan_server" pattern="[A-Za-z][A-Za-z0-9_\-]*" maxlength="80" required></span><small>以字母开头，可使用字母、数字、下划线和连字符</small></label>
-        <label class="field"><span>一句话描述 <b>必填</b></span><span class="input-wrap"><input name="description" autocomplete="off" placeholder="例如 日本区域的生产服务器" maxlength="240" required></span></label>
-        <label class="field"><span>资源分类</span><span class="input-wrap"><select id="entryCategory" name="category"><option value="__other__">其他（默认）</option></select></span><small>之后也可以在资源详情或“整理分类”里修改</small></label>
-        <label class="field"><span>标签</span><span class="input-wrap"><input name="tags" autocomplete="off" placeholder="server, japan, production" maxlength="240"></span><small>用逗号分隔，方便之后快速筛选</small></label>
-        <label class="field field--wide"><span>内置模板</span><span class="input-wrap"><select id="entryTemplate" name="template"><option value="blank">空白条目</option><option value="account">账号模板</option></select></span><small>账号模板会预置账号和密码，2FA 可选；其他信息可在下面继续添加</small></label>
+        <label id="entryIdField" class="field"><span>条目标识 <b>必填</b></span><span class="input-wrap"><input name="id" autocomplete="off" placeholder="例如 japan_server" pattern="[A-Za-z][A-Za-z0-9_\-]*" maxlength="80" required></span><small>以字母开头，可使用字母、数字、下划线和连字符</small></label>
+        <label id="entryDescriptionField" class="field"><span>一句话描述 <b data-entry-description-required>必填</b></span><span class="input-wrap"><input name="description" autocomplete="off" placeholder="例如 日本区域的生产服务器" maxlength="240" required></span></label>
+        <label id="entryCategoryField" class="field"><span>资源分类</span><span class="input-wrap"><select id="entryCategory" name="category"><option value="__other__">其他（默认）</option></select></span><small>之后也可以在资源详情或“整理分类”里修改</small></label>
+        <label id="entryTagsField" class="field"><span>标签</span><span class="input-wrap"><input name="tags" autocomplete="off" placeholder="server, japan, production" maxlength="240"></span><small>用逗号分隔，方便之后快速筛选</small></label>
+        <label id="entryTemplateField" class="field field--wide"><span>内置模板</span><span class="input-wrap"><select id="entryTemplate" name="template"><option value="blank">空白条目</option><option value="account">账号模板</option></select></span><small>账号模板会预置账号和密码，2FA 可选；其他信息可在下面继续添加</small></label>
         <section id="accountTemplateFields" class="template-fields field--wide" hidden aria-live="polite">
-          <div class="template-fields__heading"><div><span class="section-kicker">ACCOUNT TEMPLATE</span><strong>账号信息</strong></div><small>保存后会加密为条目里的独立变量</small></div>
+          <div class="template-fields__heading"><div><span class="section-kicker">账号模板</span><strong>账号信息</strong></div><small>保存后会加密为条目里的独立变量</small></div>
           <div class="template-fields__grid">
             <label class="field"><span>账号 <b>必填</b></span><span class="input-wrap"><input name="account" autocomplete="username" placeholder="例如 user@example.com" disabled></span></label>
             <label class="field"><span>密码 <b>必填</b></span><span class="input-wrap"><input name="account_password" type="password" autocomplete="new-password" placeholder="输入账号密码" disabled></span></label>
