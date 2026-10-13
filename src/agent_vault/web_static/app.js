@@ -19,6 +19,7 @@ const state = {
   activePermissionKeyId: null,
   pendingApiKeyAction: null,
   accountPreviewTimer: null,
+  accountEntryTimers: [],
 };
 
 const labels = {
@@ -160,6 +161,7 @@ async function loadSnapshot() {
 
 function renderSnapshot() {
   if (!state.snapshot) return;
+  clearAccountEntryTimers();
   const { metrics } = state.snapshot;
   document.querySelector("#entryMetric").textContent = metrics.entries;
   document.querySelector("#secretMetric").textContent = metrics.secrets;
@@ -215,7 +217,8 @@ function renderEntries(container, entries, compact) {
     ));
     return;
   }
-  entries.forEach((entry) => {
+  const visibleEntries = compact ? entries.slice(0, 3) : entries;
+  visibleEntries.forEach((entry) => {
     const card = createElement("button", "entry-card");
     card.type = "button";
     const top = createElement("div", "entry-card__top");
@@ -232,13 +235,95 @@ function renderEntries(container, entries, compact) {
     const tags = createElement("div", "tag-row");
     appendTags(tags, entry.tags);
     const openHint = createElement("span", "entry-card__open", "查看详情  →");
-    card.append(top, title, description, categoryLabel, tags, openHint);
+    card.append(top, title, description, categoryLabel, tags);
+    const template = accountTemplateParts(entry);
+    if (template) hydrateAccountEntryCard(card, template);
+    card.append(openHint);
     card.addEventListener("click", () => openDetail(entry.id));
     container.append(card);
   });
-  if (compact && entries.length > 3) {
-    container.replaceChildren(...Array.from(container.children).slice(0, 3));
+}
+
+function clearAccountEntryTimers() {
+  state.accountEntryTimers.forEach((timer) => window.clearInterval(timer));
+  state.accountEntryTimers = [];
+}
+
+function addCopyBehavior(element, valueGetter) {
+  element.setAttribute("role", "button");
+  element.tabIndex = 0;
+  const copy = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      const value = await valueGetter();
+      if (!value) return;
+      await navigator.clipboard.writeText(value);
+      toast("已复制", "内容已复制到剪贴板。");
+    } catch (error) {
+      toast("复制失败", error.message, "error");
+    }
+  };
+  element.addEventListener("click", copy);
+  element.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") copy(event);
+  });
+}
+
+function hydrateAccountEntryCard(card, parts) {
+  const meta = createElement("div", "entry-card__account-meta");
+  const accountRow = createElement("div", "entry-card__account-row");
+  accountRow.append(createElement("span", "entry-card__account-label", "账号"));
+  const accountValue = createElement("strong", "entry-card__account-value", "读取中…");
+  accountRow.append(accountValue);
+  addCopyBehavior(accountValue, async () => {
+    const result = await requestSecretValue(parts.account.name);
+    return result.value;
+  });
+
+  const passwordRow = createElement("div", "entry-card__account-row");
+  passwordRow.append(createElement("span", "entry-card__account-label", "密码"));
+  const passwordValue = createElement("span", "entry-card__password-value", "••••••••••••");
+  const passwordCopy = createElement("span", "entry-card__copy-hint", "复制");
+  passwordRow.append(passwordValue, passwordCopy);
+  addCopyBehavior(passwordRow, async () => {
+    const result = await requestSecretValue(parts.password.name);
+    return result.value;
+  });
+
+  const totpRow = createElement("div", "entry-card__account-row entry-card__totp-row");
+  totpRow.append(createElement("span", "entry-card__account-label", "2FA"));
+  const totpValue = createElement("strong", "entry-card__totp-value", "------");
+  const totpExpiry = createElement("small", "entry-card__totp-expiry", "读取中");
+  totpRow.append(totpValue, totpExpiry);
+  let secret = "";
+  const refreshTotp = async () => {
+    try {
+      if (!secret) secret = (await requestSecretValue(parts.twoFactor.name)).value;
+      const result = await generateTotp(secret);
+      if (!card.isConnected) return;
+      totpValue.textContent = result.code;
+      totpExpiry.textContent = `${result.remaining}s`;
+    } catch (error) {
+      totpValue.textContent = "不可用";
+      totpExpiry.textContent = "检查密钥";
+    }
+  };
+  if (parts.twoFactor) {
+    addCopyBehavior(totpValue, async () => {
+      if (!secret) secret = (await requestSecretValue(parts.twoFactor.name)).value;
+      return generateTotp(secret).then((result) => result.code);
+    });
+    refreshTotp();
+    state.accountEntryTimers.push(window.setInterval(refreshTotp, 1000));
+  } else {
+    totpRow.hidden = true;
   }
+  meta.append(accountRow, passwordRow, totpRow);
+  card.append(meta);
+  requestSecretValue(parts.account.name).then((result) => {
+    if (accountValue.isConnected) accountValue.textContent = result.value;
+  }).catch(() => { accountValue.textContent = "读取失败"; });
 }
 
 function categories() {
@@ -1936,6 +2021,7 @@ detailDialog.addEventListener("click", (event) => {
 
 detailDialog.addEventListener("close", () => {
   state.activeEntryId = null;
+  clearAccountPreviewTimer();
   document.querySelector("#detailVariableList").replaceChildren();
 });
 

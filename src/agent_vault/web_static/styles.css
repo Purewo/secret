@@ -1305,6 +1305,69 @@ svg {
   -webkit-line-clamp: 2;
 }
 
+.entry-card__account-meta {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(42, 91, 86, 0.1);
+}
+
+.entry-card__account-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.entry-card__account-label {
+  color: var(--mint-deep);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.entry-card__account-value,
+.entry-card__password-value,
+.entry-card__totp-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-card__account-value {
+  cursor: copy;
+  font-size: 12px;
+}
+
+.entry-card__password-value {
+  color: #6b8983;
+  font: 11px/1 Consolas, monospace;
+  letter-spacing: .12em;
+}
+
+.entry-card__copy-hint {
+  color: var(--aqua-deep);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.entry-card__totp-value {
+  cursor: copy;
+  color: #126b5b;
+  font: 800 13px/1 Consolas, monospace;
+  letter-spacing: .1em;
+}
+
+.entry-card__totp-expiry {
+  min-width: 30px;
+  color: var(--muted);
+  font-size: 9px;
+  text-align: right;
+}
+
 .entry-card__open {
   position: relative;
   z-index: 1;
