@@ -18,6 +18,7 @@ const state = {
   uploadSkillId: null,
   activePermissionKeyId: null,
   pendingApiKeyAction: null,
+  accountPreviewTimer: null,
 };
 
 const labels = {
@@ -1238,9 +1239,124 @@ function openDetail(entryId) {
   detailDialog.showModal();
 }
 
+function accountTemplateParts(entry) {
+  const variables = entry.variables || [];
+  const find = (suffix) => variables.find((record) => record.name.endsWith(`_${suffix}`));
+  const account = find("account");
+  const password = find("password");
+  const twoFactor = find("2fa");
+  if (!account || !password) return null;
+  return { account, password, twoFactor, custom: variables.filter((record) => ![account, password, twoFactor].includes(record)) };
+}
+
+function base32Bytes(value) {
+  const normalized = value.toUpperCase().replace(/[-=\s]/g, "");
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const char of normalized) {
+    const index = alphabet.indexOf(char);
+    if (index < 0) throw new Error("2FA 密钥格式无效");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes = [];
+  for (let offset = 0; offset + 8 <= bits.length; offset += 8) bytes.push(parseInt(bits.slice(offset, offset + 8), 2));
+  return new Uint8Array(bytes);
+}
+
+function parseTotpSecret(value) {
+  const text = String(value || "").trim();
+  if (text.toLowerCase().startsWith("otpauth://")) {
+    const url = new URL(text);
+    return { secret: url.searchParams.get("secret") || "", period: Number(url.searchParams.get("period")) || 30 };
+  }
+  return { secret: text, period: 30 };
+}
+
+async function generateTotp(value, timestamp = Date.now()) {
+  const { secret, period } = parseTotpSecret(value);
+  const key = await crypto.subtle.importKey("raw", base32Bytes(secret), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const counter = Math.floor(timestamp / 1000 / period);
+  const data = new ArrayBuffer(8);
+  const view = new DataView(data);
+  view.setUint32(0, Math.floor(counter / 0x100000000));
+  view.setUint32(4, counter >>> 0);
+  const digest = new Uint8Array(await crypto.subtle.sign("HMAC", key, data));
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24) | (digest[offset + 1] << 16) | (digest[offset + 2] << 8) | digest[offset + 3];
+  return { code: String(binary % 1000000).padStart(6, "0"), remaining: period - (Math.floor(timestamp / 1000) % period), period };
+}
+
+function clearAccountPreviewTimer() {
+  if (state.accountPreviewTimer) window.clearInterval(state.accountPreviewTimer);
+  state.accountPreviewTimer = null;
+}
+
+function accountValueRow(name, label, masked = true) {
+  const row = createElement("div", "account-preview__row");
+  row.append(createElement("span", "account-preview__label", label));
+  const value = createElement("code", `account-preview__value${masked ? " is-masked" : ""}`, masked ? "••••••••••••••••" : "读取中");
+  const action = createElement("button", "value-action", masked ? "显示" : "复制");
+  action.type = "button";
+  action.addEventListener("click", () => masked ? toggleSecretValue(name, value, action) : copySecretValue(name, action));
+  row.append(value, action);
+  return row;
+}
+
+async function renderAccountTemplateCard(parts) {
+  clearAccountPreviewTimer();
+  const container = document.querySelector("#detailVariableList");
+  const card = createElement("section", "account-preview-card");
+  const accountValue = createElement("strong", "account-preview__account", "读取中…");
+  card.append(createElement("span", "account-preview__kicker", "ACCOUNT"), accountValue, createElement("small", "account-preview__hint", "账号默认显示，密码保持隐藏"));
+  container.prepend(card);
+  try {
+    const account = await requestSecretValue(parts.account.name);
+    if (!card.isConnected) return;
+    accountValue.textContent = account.value;
+    account.value = "";
+  } catch (error) {
+    accountValue.textContent = "账号读取失败";
+  }
+  card.append(accountValueRow(parts.password.name, "密码"));
+  if (parts.twoFactor) {
+    const twoFactor = createElement("div", "account-preview__totp");
+    const totpLabel = createElement("span", "account-preview__label", "2FA 动态验证码");
+    const code = createElement("strong", "account-preview__totp-code", "------");
+    const countdown = createElement("span", "account-preview__countdown", "读取中");
+    twoFactor.append(totpLabel, code, countdown);
+    card.append(twoFactor);
+    let twoFactorSecret = "";
+    const refresh = async () => {
+      try {
+        if (!twoFactorSecret) {
+          const secret = await requestSecretValue(parts.twoFactor.name);
+          twoFactorSecret = secret.value;
+          secret.value = "";
+        }
+        const result = await generateTotp(twoFactorSecret);
+        if (!card.isConnected) return;
+        code.textContent = result.code;
+        countdown.textContent = `${result.remaining}s 后刷新`;
+      } catch (error) {
+        code.textContent = "不可用";
+        countdown.textContent = "请检查 2FA 密钥格式";
+      }
+    };
+    await refresh();
+    state.accountPreviewTimer = window.setInterval(refresh, 1000);
+  }
+}
+
 function renderDetailVariables(entry) {
   const container = document.querySelector("#detailVariableList");
   container.replaceChildren();
+  clearAccountPreviewTimer();
+  const template = accountTemplateParts(entry);
+  if (template) {
+    renderAccountTemplateCard(template);
+    template.custom.forEach((record, index) => renderDetailVariable(record, index, container));
+    return;
+  }
   if (!entry.variables.length) {
     container.append(emptyState(
       "这个条目还是空的",
@@ -1251,7 +1367,10 @@ function renderDetailVariables(entry) {
     return;
   }
 
-  entry.variables.forEach((record, index) => {
+  entry.variables.forEach((record, index) => renderDetailVariable(record, index, container));
+}
+
+function renderDetailVariable(record, index, container) {
     const item = createElement("section", "detail-variable");
     item.dataset.position = String(index + 1);
 
@@ -1284,8 +1403,7 @@ function renderDetailVariables(entry) {
     appendTags(tagRow, record.tags);
     foot.append(tagRow, createElement("span", "", `更新于 ${formatDate(record.updated_at)}`));
     item.append(heading, valueRow, foot);
-    container.append(item);
-  });
+  container.append(item);
 }
 
 async function requestSecretValue(name) {
@@ -1351,6 +1469,7 @@ async function copySecretValue(name, button) {
 
 function closeDetail() {
   state.activeEntryId = null;
+  clearAccountPreviewTimer();
   document.querySelector("#detailVariableList").replaceChildren();
   if (detailDialog.open) detailDialog.close();
 }

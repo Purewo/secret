@@ -2318,6 +2318,85 @@ svg {
   gap: 12px;
 }
 
+.account-preview-card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 22px;
+  border: 1px solid rgba(82, 195, 157, 0.25);
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(223, 253, 225, 0.92), rgba(235, 249, 255, 0.9));
+  box-shadow: 0 12px 28px rgba(38, 103, 92, 0.1);
+}
+
+.account-preview__kicker,
+.account-preview__label {
+  color: var(--mint-deep);
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.account-preview__account {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(24px, 4vw, 34px);
+  line-height: 1.15;
+}
+
+.account-preview__hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.account-preview__row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 7px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(42, 91, 86, 0.12);
+}
+
+.account-preview__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font: 700 14px/1.4 Consolas, monospace;
+}
+
+.account-preview__value.is-masked {
+  color: #6c8985;
+  letter-spacing: 0.15em;
+}
+
+.account-preview__totp {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  margin-top: 7px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(42, 91, 86, 0.12);
+}
+
+.account-preview__totp-code {
+  color: #126b5b;
+  font: 900 26px/1 Consolas, monospace;
+  letter-spacing: 0.12em;
+}
+
+.account-preview__countdown {
+  min-width: 68px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
 .detail-variable {
   position: relative;
   padding: 17px;
@@ -4510,6 +4589,10 @@ html:has(.api-key-permission-dialog[open]) {
   .template-fields__grid .field--wide { grid-column: auto; }
   .template-custom-field { grid-template-columns: 1fr; gap: 0; }
   .template-remove-field { justify-self: start; margin: -3px 0 10px; }
+  .account-preview__row { grid-template-columns: 1fr auto; }
+  .account-preview__row .account-preview__value { grid-column: 1 / -1; grid-row: 2; }
+  .account-preview__totp { grid-template-columns: 1fr; gap: 7px; }
+  .account-preview__countdown { text-align: left; }
 }
 
 /* Keep scrolling on the main thread light: these layers stay visually rich
