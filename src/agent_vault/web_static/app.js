@@ -237,7 +237,10 @@ function renderEntries(container, entries, compact) {
     const openHint = createElement("span", "entry-card__open", "查看详情  →");
     card.append(top, title, description, categoryLabel, tags);
     const template = accountTemplateParts(entry);
-    if (template) hydrateAccountEntryCard(card, template);
+    if (template) {
+      card.classList.add("entry-card--account");
+      hydrateAccountEntryCard(card, template);
+    }
     card.append(openHint);
     card.addEventListener("click", () => openDetail(entry.id));
     container.append(card);

@@ -1382,6 +1382,47 @@ svg {
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
+.entry-card--account {
+  padding: 17px;
+}
+
+.entry-card--account h3 {
+  margin-top: 12px;
+  margin-bottom: 5px;
+  font-size: 16px;
+}
+
+.entry-card--account p {
+  min-height: 28px;
+  font-size: 11px;
+}
+
+.entry-card--account .entry-card__account-meta {
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.entry-card--account .entry-card__account-label {
+  font-size: 10px;
+}
+
+.entry-card--account .entry-card__account-value {
+  font-size: 13px;
+}
+
+.entry-card--account .entry-card__password-value {
+  font-size: 12px;
+}
+
+.entry-card--account .entry-card__totp-value {
+  font-size: 14px;
+}
+
+.entry-card--account .entry-card__open {
+  margin-top: 11px;
+  font-size: 10px;
+}
+
 .entry-card:hover .entry-card__open,
 .entry-card:focus-visible .entry-card__open {
   opacity: 1;
