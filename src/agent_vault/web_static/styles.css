@@ -2302,6 +2302,10 @@ svg {
   justify-content: space-between;
 }
 
+.detail-head__actions { display: flex; align-items: center; gap: 8px; }
+.detail-edit-button { min-height: 32px; padding: 0 11px; border: 1px solid rgba(70, 164, 136, .22); border-radius: 10px; background: rgba(255,255,255,.64); color: #217361; font-size: 11px; font-weight: 800; }
+.detail-edit-button:hover { background: rgba(255,255,255,.9); }
+
 .detail-kicker,
 .detail-section-title > div > span {
   color: var(--mint-deep);

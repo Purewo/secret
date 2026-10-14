@@ -20,6 +20,7 @@ const state = {
   pendingApiKeyAction: null,
   accountPreviewTimer: null,
   accountEntryTimers: [],
+  editingEntryId: null,
 };
 
 const labels = {
@@ -1235,6 +1236,7 @@ function setPersonalTab(tab) {
 }
 
 function openEntryDialog() {
+  state.editingEntryId = null;
   entryForm.reset();
   accountCustomFields.replaceChildren();
   setAccountTemplateVisibility();
@@ -1242,6 +1244,40 @@ function openEntryDialog() {
   populateCategoryOptions(document.querySelector("#entryCategory"), "__other__");
   entryDialog.showModal();
   window.setTimeout(() => entryForm.elements.id.focus(), 50);
+}
+
+async function openEntryEditor(entryId) {
+  const entry = state.snapshot?.entries.find((item) => item.id === entryId);
+  const parts = entry && accountTemplateParts(entry);
+  if (!entry || !parts) {
+    toast("暂不支持编辑", "只有账号模板条目可以从这里编辑。", "error");
+    return;
+  }
+  state.editingEntryId = entryId;
+  entryForm.reset();
+  accountCustomFields.replaceChildren();
+  clearFormError(entryForm);
+  populateCategoryOptions(document.querySelector("#entryCategory"), categoryIdForEntry(entry));
+  entryTemplate.value = "account";
+  setAccountTemplateVisibility();
+  entryForm.elements.id.value = entry.id;
+  entryForm.elements.description.value = entry.description === "账号模板" ? "" : entry.description;
+  entryForm.elements.tags.value = (entry.tags || []).join(", ");
+  try {
+    const values = await Promise.all([
+      requestSecretValue(parts.account.name),
+      requestSecretValue(parts.password.name),
+      parts.twoFactor ? requestSecretValue(parts.twoFactor.name) : Promise.resolve(null),
+    ]);
+    entryForm.elements.account.value = values[0].value;
+    entryForm.elements.account_password.value = values[1].value;
+    entryForm.elements.account_2fa.value = values[2]?.value || "";
+    values.forEach((value) => { if (value) value.value = ""; });
+    entryDialog.showModal();
+  } catch (error) {
+    state.editingEntryId = null;
+    toast("打开编辑失败", error.message, "error");
+  }
 }
 
 function accountEntryId(value) {
@@ -1363,6 +1399,7 @@ function openDetail(entryId) {
   document.querySelector("#detailCount").textContent = `${entry.secret_count} 个变量`;
   document.querySelector("#detailTitle").textContent = entry.id;
   document.querySelector("#detailDescription").textContent = entry.description;
+  document.querySelector("#detailEditEntry").hidden = !accountTemplateParts(entry);
   populateCategoryOptions(document.querySelector("#detailCategorySelect"), categoryIdForEntry(entry));
   const tags = document.querySelector("#detailTags");
   tags.replaceChildren();
@@ -1669,7 +1706,7 @@ entryForm.addEventListener("submit", async (event) => {
   if (!entryForm.reportValidity()) return;
   const button = entryForm.querySelector("button[type='submit']");
   setLoading(button, true);
-  const entryId = entryForm.elements.id.value.trim();
+  const entryId = state.editingEntryId || entryForm.elements.id.value.trim();
   const template = entryTemplate.value;
   let templateSecrets;
   try {
@@ -1697,10 +1734,8 @@ entryForm.addEventListener("submit", async (event) => {
     }
     closeDialog(entryDialog);
     await loadSnapshot();
-    toast(
-      "条目创建成功",
-      templateSecrets.length ? `账号模板已保存 ${templateSecrets.length} 个加密变量。` : "现在可以在详情里添加变量。",
-    );
+    toast(state.editingEntryId ? "条目已更新" : "条目创建成功", state.editingEntryId ? "账号信息已保存。" : templateSecrets.length ? `账号模板已保存 ${templateSecrets.length} 个加密变量。` : "现在可以在详情里添加变量。");
+    state.editingEntryId = null;
     window.setTimeout(() => openDetail(entryId), 220);
   } catch (error) {
     showFormError(entryForm, error.message);
@@ -2001,7 +2036,7 @@ document.querySelectorAll("[data-toggle-password]").forEach((button) => {
 
 entryTemplate.addEventListener("change", setAccountTemplateVisibility);
 entryForm.elements.account.addEventListener("input", () => {
-  if (entryTemplate.value === "account") entryForm.elements.id.value = accountEntryId(entryForm.elements.account.value);
+  if (entryTemplate.value === "account" && !state.editingEntryId) entryForm.elements.id.value = accountEntryId(entryForm.elements.account.value);
 });
 addAccountFieldButton.addEventListener("click", addAccountCustomField);
 
@@ -2080,6 +2115,12 @@ document.querySelector("#detailAddSecret").addEventListener("click", () => {
   const entryId = state.activeEntryId;
   closeDetail();
   openSecretDialog(entryId || "");
+});
+
+document.querySelector("#detailEditEntry").addEventListener("click", () => {
+  const entryId = state.activeEntryId;
+  closeDetail();
+  if (entryId) openEntryEditor(entryId);
 });
 
 document.querySelector("#detailCategorySave").addEventListener("click", async (event) => {
