@@ -222,6 +222,24 @@ function renderEntries(container, entries, compact) {
   }
   const visibleEntries = compact ? entries.slice(0, 3) : entries;
   visibleEntries.forEach((entry) => {
+    const template = accountTemplateParts(entry);
+    if (template) {
+      const card = createElement("article", "entry-card entry-card--account");
+      const title = createElement("h3");
+      const account = createElement("button", "entry-card__email", "正在读取账号…");
+      account.type = "button";
+      account.title = "点击复制账号";
+      title.append(account);
+      card.append(title);
+      if (entry.description && entry.description !== "账号模板") card.append(createElement("p", "", entry.description));
+      container.append(card);
+      hydrateAccountEntryCard(card, template, account);
+      const details = createElement("button", "entry-card__details", "查看详情 →");
+      details.type = "button";
+      details.addEventListener("click", () => openDetail(entry.id));
+      card.append(details);
+      return;
+    }
     const card = createElement("button", "entry-card");
     card.type = "button";
     const top = createElement("div", "entry-card__top");
@@ -239,11 +257,6 @@ function renderEntries(container, entries, compact) {
     appendTags(tags, entry.tags);
     const openHint = createElement("span", "entry-card__open", "查看详情  →");
     card.append(top, title, description, categoryLabel, tags);
-    const template = accountTemplateParts(entry);
-    if (template) {
-      card.classList.add("entry-card--account");
-      hydrateAccountEntryCard(card, template);
-    }
     card.append(openHint);
     card.addEventListener("click", () => openDetail(entry.id));
     container.append(card);
@@ -276,18 +289,16 @@ function addCopyBehavior(element, valueGetter) {
   });
 }
 
-function hydrateAccountEntryCard(card, parts) {
+function hydrateAccountEntryCard(card, parts, accountValue) {
   const meta = createElement("div", "entry-card__account-meta");
-  const accountRow = createElement("div", "entry-card__account-row");
-  accountRow.append(createElement("span", "entry-card__account-label", "账号"));
-  const accountValue = createElement("strong", "entry-card__account-value", "读取中…");
-  accountRow.append(accountValue);
   addCopyBehavior(accountValue, async () => {
     const result = await requestSecretValue(parts.account.name);
     return result.value;
   });
 
-  const passwordRow = createElement("div", "entry-card__account-row");
+  const passwordRow = createElement("button", "entry-card__account-row");
+  passwordRow.type = "button";
+  passwordRow.setAttribute("aria-label", "复制密码");
   passwordRow.append(createElement("span", "entry-card__account-label", "密码"));
   const passwordValue = createElement("span", "entry-card__password-value", "••••••••••••");
   const passwordCopy = createElement("span", "entry-card__copy-hint", "复制");
@@ -297,35 +308,47 @@ function hydrateAccountEntryCard(card, parts) {
     return result.value;
   });
 
-  const totpRow = createElement("div", "entry-card__account-row entry-card__totp-row");
+  const totpRow = createElement("button", "entry-card__account-row entry-card__totp-row");
+  totpRow.type = "button";
+  totpRow.setAttribute("aria-label", "复制双重验证码");
   totpRow.append(createElement("span", "entry-card__account-label", "2FA"));
   const totpValue = createElement("strong", "entry-card__totp-value", "------");
   const totpExpiry = createElement("small", "entry-card__totp-expiry", "读取中");
   totpRow.append(totpValue, totpExpiry);
   let secret = "";
+  let timer = null;
   const refreshTotp = async () => {
+    if (!card.isConnected) {
+      secret = "";
+      window.clearInterval(timer);
+      state.accountEntryTimers = state.accountEntryTimers.filter((item) => item !== timer);
+      return;
+    }
     try {
       if (!secret) secret = (await requestSecretValue(parts.twoFactor.name)).value;
       const result = await generateTotp(secret);
       if (!card.isConnected) return;
       totpValue.textContent = result.code;
-      totpExpiry.textContent = `${result.remaining}s`;
+      totpExpiry.textContent = `${result.remaining} 秒后过期`;
     } catch (error) {
       totpValue.textContent = "不可用";
       totpExpiry.textContent = "检查密钥";
     }
   };
   if (parts.twoFactor) {
-    addCopyBehavior(totpValue, async () => {
+    addCopyBehavior(totpRow, async () => {
       if (!secret) secret = (await requestSecretValue(parts.twoFactor.name)).value;
       return generateTotp(secret).then((result) => result.code);
     });
     refreshTotp();
-    state.accountEntryTimers.push(window.setInterval(refreshTotp, 1000));
+    timer = window.setInterval(refreshTotp, 1000);
+    state.accountEntryTimers.push(timer);
   } else {
-    totpRow.hidden = true;
+    totpRow.disabled = true;
+    totpValue.textContent = "未设置";
+    totpExpiry.textContent = "";
   }
-  meta.append(accountRow, passwordRow, totpRow);
+  meta.append(passwordRow, totpRow);
   card.append(meta);
   requestSecretValue(parts.account.name).then((result) => {
     if (accountValue.isConnected) accountValue.textContent = result.value;

@@ -1383,27 +1383,44 @@ svg {
 }
 
 .entry-card--account {
-  padding: 17px;
+  padding: 22px;
+  align-self: start;
+  background: #fbfefd;
 }
 
+.entry-card--account::after { display: none; }
+.entry-card__email { width: 100%; padding: 0; background: transparent; text-align: left; font-size: 21px; font-weight: 800; line-height: 1.4; overflow-wrap: anywhere; cursor: copy; }
+.entry-card__email:hover { color: var(--mint-deep); }
+.entry-card__details { display: block; margin: 14px 0 0 auto; padding: 6px 0; background: transparent; color: var(--mint-deep); font-size: 13px; font-weight: 700; }
+.entry-card--account .entry-card__account-row { width: 100%; min-height: 78px; padding: 12px 14px; border: 1px solid #d5e8e1; border-radius: 13px; background: #f0f7f4; text-align: left; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; cursor: copy; }
+.entry-card--account .entry-card__account-row:hover { border-color: #6ac9aa; background: #e7f5ee; }
+.entry-card--account .entry-card__account-row:disabled { cursor: default; }
+.entry-card--account .entry-card__account-label { grid-column: 1 / -1; }
+.entry-card--account .entry-card__totp-expiry { font-size: 12px; }
+.entry-card--account .entry-card__copy-hint { font-size: 13px; padding: 6px 9px; border-radius: 8px; background: #fff; }
+
 .entry-card--account h3 {
-  margin-top: 12px;
+  margin-top: 0;
   margin-bottom: 5px;
   font-size: 16px;
+  white-space: normal;
+  overflow: visible;
 }
 
 .entry-card--account p {
-  min-height: 28px;
-  font-size: 11px;
+  min-height: 0;
+  font-size: 13px;
 }
 
 .entry-card--account .entry-card__account-meta {
   margin-top: 10px;
-  padding-top: 10px;
+  padding-top: 0;
+  border-top: 0;
+  gap: 10px;
 }
 
 .entry-card--account .entry-card__account-label {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .entry-card--account .entry-card__account-value {
@@ -1411,11 +1428,11 @@ svg {
 }
 
 .entry-card--account .entry-card__password-value {
-  font-size: 12px;
+  font-size: 20px;
 }
 
 .entry-card--account .entry-card__totp-value {
-  font-size: 14px;
+  font-size: 26px;
 }
 
 .entry-card--account .entry-card__open {
@@ -2100,6 +2117,12 @@ svg {
   border-radius: 21px;
   background: linear-gradient(145deg, rgba(228, 251, 235, 0.74), rgba(236, 249, 255, 0.68));
 }
+
+.account-form-fields { margin-bottom: 20px; }
+.account-form-fields .template-fields__grid { display: block; }
+.account-form-fields .template-custom-fields:empty { display: none; }
+.account-form-fields .template-add-field { margin-top: 2px; }
+.detail-section-title { margin-bottom: 18px; }
 
 .template-fields__heading {
   display: flex;
