@@ -13,9 +13,12 @@ const state = {
   apiKeys: [],
   skills: [],
   skillCategories: [],
+  memoryBackups: [],
   activeSkillCategory: "__all__",
   activeSkillId: null,
   uploadSkillId: null,
+  uploadMemoryBackupId: null,
+  activeMemoryBackupId: null,
   activePermissionKeyId: null,
   pendingApiKeyAction: null,
   accountPreviewTimer: null,
@@ -28,6 +31,7 @@ const labels = {
   entries: "资源条目",
   secrets: "变量检索",
   skills: "Skill 仓库",
+  memory: "记忆备份",
   settings: "个人中心",
 };
 
@@ -46,8 +50,11 @@ const apiKeyActionDialog = document.querySelector("#apiKeyActionDialog");
 const skillCategoryDialog = document.querySelector("#skillCategoryDialog");
 const skillUploadDialog = document.querySelector("#skillUploadDialog");
 const skillDetailDialog = document.querySelector("#skillDetailDialog");
+const memoryUploadDialog = document.querySelector("#memoryUploadDialog");
+const memoryDetailDialog = document.querySelector("#memoryDetailDialog");
 const skillCategoryForm = document.querySelector("#skillCategoryForm");
 const skillUploadForm = document.querySelector("#skillUploadForm");
+const memoryUploadForm = document.querySelector("#memoryUploadForm");
 const entryForm = document.querySelector("#entryForm");
 const secretForm = document.querySelector("#secretForm");
 const categoryCreateForm = document.querySelector("#categoryCreateForm");
@@ -117,12 +124,14 @@ function showLogin() {
   state.apiKeys = [];
   state.skills = [];
   state.skillCategories = [];
+  state.memoryBackups = [];
   resetPasswordForm();
   loginForm.elements.password.value = "";
   loginError.textContent = "";
   document.querySelectorAll("dialog[open]").forEach((dialog) => dialog.close());
   document.querySelector("#detailVariableList").replaceChildren();
   document.querySelector("#apiKeyList").replaceChildren();
+  document.querySelector("#memoryBackupList").replaceChildren();
   document.querySelector("#secretList").replaceChildren();
   appView.hidden = true;
   loginView.hidden = false;
@@ -147,16 +156,18 @@ function setToday() {
 }
 
 async function loadSnapshot() {
-  const [snapshot, apiKeyPayload, skillPayload, skillCategories] = await Promise.all([
+  const [snapshot, apiKeyPayload, skillPayload, skillCategories, memoryPayload] = await Promise.all([
     api("/api/snapshot"),
     api("/api/api-keys"),
     api("/api/skills"),
     api("/api/skills/categories"),
+    api("/api/memory-backups"),
   ]);
   state.snapshot = snapshot;
   state.apiKeys = apiKeyPayload.api_keys || [];
   state.skills = skillPayload.skills || [];
   state.skillCategories = skillCategories.categories || [];
+  state.memoryBackups = memoryPayload.backups || [];
   renderSnapshot();
   if (!snapshot.status.ready) {
     toast("保险柜需要检查", "本地密钥或密文库状态异常。", "error");
@@ -174,6 +185,7 @@ function renderSnapshot() {
   document.querySelector("#navSecretCount").textContent = metrics.unassigned;
   document.querySelector("#navApiKeyCount").textContent = state.apiKeys.length;
   document.querySelector("#navSkillCount").textContent = state.skills.length;
+  document.querySelector("#navMemoryCount").textContent = state.memoryBackups.length;
   document.querySelector("#lookupTotal").textContent = metrics.secrets;
   populateCategoryOptions(document.querySelector("#entryCategory"));
   populateCategoryOptions(document.querySelector("#detailCategorySelect"));
@@ -190,6 +202,7 @@ function renderSnapshot() {
   renderSecrets();
   renderApiKeys();
   renderSkills();
+  renderMemoryBackups();
   populateEntrySelect();
 }
 
@@ -805,6 +818,200 @@ apiKeyPermissionForm.addEventListener("change", updatePermissionSummary);
 
 function formatSize(bytes) {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).format(date);
+}
+
+function memoryDownloadUrl(backupId, version) {
+  return `/api/memory-backups/${encodeURIComponent(backupId)}/versions/${encodeURIComponent(version)}/download`;
+}
+
+function renderMemoryBackups() {
+  const list = document.querySelector("#memoryBackupList");
+  if (!list) return;
+  list.replaceChildren();
+  if (!state.memoryBackups.length) {
+    const empty = createElement("div", "memory-empty glass");
+    empty.append(
+      createElement("span", "memory-empty__icon", "✦"),
+      createElement("strong", "", "还没有记忆备份"),
+      createElement("p", "", "上传一个压缩包，把 Codex 或其他运行环境的记忆保存下来。"),
+    );
+    const button = createElement("button", "secondary-button", "＋ 上传备份");
+    button.type = "button";
+    button.addEventListener("click", () => openMemoryUpload());
+    empty.append(button);
+    list.append(empty);
+    return;
+  }
+
+  state.memoryBackups.forEach((backup) => {
+    const latest = backup.latest || {};
+    const card = createElement("article", "memory-card glass");
+    const top = createElement("div", "memory-card__top");
+    top.append(createElement("span", "memory-card__glyph", "✦"));
+    top.append(createElement("span", "memory-card__version", `v${latest.version || backup.latest_version || "—"}`));
+    const name = createElement("h2", "", backup.name);
+    const description = createElement("p", "", backup.description || "无备注");
+    const meta = createElement("div", "memory-card__meta");
+    meta.append(
+      createElement("span", "", `${latest.archive_format || "archive"} · ${formatSize(latest.size_bytes || 0)}`),
+      createElement("span", "", `更新 ${formatDateTime(backup.updated_at)}`),
+    );
+    const hash = createElement("code", "memory-card__hash", `SHA-256 ${latest.sha256 || "—"}`);
+    hash.title = latest.sha256 || "";
+    const foot = createElement("div", "memory-card__foot");
+    foot.append(createElement("span", "", "版本化归档"));
+    const actions = createElement("div", "memory-card__actions");
+    const detail = createElement("button", "memory-card__button", "版本详情");
+    detail.type = "button";
+    detail.addEventListener("click", () => openMemoryDetail(backup.id));
+    const download = createElement("a", "memory-card__download", "下载最新 ↗");
+    download.href = memoryDownloadUrl(backup.id, latest.version || backup.latest_version);
+    download.download = `${backup.name || "memory-backup"}-${latest.version || "latest"}`;
+    actions.append(detail, download);
+    foot.append(actions);
+    card.append(top, name, description, meta, hash, foot);
+    list.append(card);
+  });
+}
+
+function openMemoryUpload(backup = null) {
+  state.uploadMemoryBackupId = backup?.id || null;
+  memoryUploadForm.reset();
+  clearFormError(memoryUploadForm);
+  memoryUploadForm.elements.name.required = !backup;
+  document.querySelector("#memoryUploadTitle").textContent = backup ? "追加记忆版本" : "上传记忆备份";
+  document.querySelector("#memoryUploadKicker").textContent = backup ? "APPEND MEMORY VERSION" : "NEW MEMORY BACKUP";
+  if (backup) {
+    memoryUploadForm.elements.name.value = backup.name || "";
+    memoryUploadForm.elements.description.value = backup.description || "";
+    memoryUploadForm.elements.version.value = "";
+  } else {
+    memoryUploadForm.elements.version.value = new Date().toISOString().slice(0, 10).replaceAll("-", ".");
+  }
+  updateMemoryFileZone();
+  memoryUploadDialog.showModal();
+  window.setTimeout(() => memoryUploadForm.elements.version.focus(), 50);
+}
+
+function closeMemoryUpload() {
+  state.uploadMemoryBackupId = null;
+  if (memoryUploadDialog.open) memoryUploadDialog.close();
+}
+
+function updateMemoryFileZone() {
+  const file = memoryUploadForm.elements.package.files[0];
+  const zone = document.querySelector("#memoryFileDropzone");
+  zone.classList.toggle("is-selected", Boolean(file));
+  document.querySelector("#memoryFileTitle").textContent = file ? file.name : "把压缩包拖到这里";
+  document.querySelector("#memoryFileSubtitle").textContent = file ? `${formatSize(file.size)} · 已选择` : "或点击选择 ZIP / TAR / 7z / RAR";
+  document.querySelector("#memoryFileAction").innerHTML = file ? "更换文件 <span>↗</span>" : "选择文件 <span>↗</span>";
+}
+
+async function uploadMemoryBackup(event) {
+  event.preventDefault();
+  clearFormError(memoryUploadForm);
+  if (!memoryUploadForm.reportValidity()) return;
+  const file = memoryUploadForm.elements.package.files[0];
+  if (!file || file.size <= 0 || file.size > 100 * 1024 * 1024) {
+    showFormError(memoryUploadForm, "请选择 1 B 到 100 MB 的压缩包。");
+    return;
+  }
+  const button = memoryUploadForm.querySelector("button[type='submit']");
+  setLoading(button, true);
+  try {
+    const query = new URLSearchParams({
+      name: memoryUploadForm.elements.name.value.trim(),
+      description: memoryUploadForm.elements.description.value.trim(),
+      version: memoryUploadForm.elements.version.value.trim(),
+      filename: file.name,
+    });
+    if (state.uploadMemoryBackupId) query.set("backup_id", state.uploadMemoryBackupId);
+    const response = await fetch(`/api/memory-backups/upload?${query.toString()}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": file.type || "application/octet-stream", "X-CSRF-Token": state.csrfToken },
+      body: file,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `上传失败（${response.status}）`);
+    const uploaded = payload.backup;
+    closeMemoryUpload();
+    await loadSnapshot();
+    toast("记忆备份已上传", `v${uploaded.latest_version} 已写入版本列表。`);
+    await openMemoryDetail(uploaded.id);
+  } catch (error) {
+    showFormError(memoryUploadForm, error.message);
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function openMemoryDetail(id) {
+  try {
+    const { backup } = await api(`/api/memory-backups/${encodeURIComponent(id)}`);
+    state.activeMemoryBackupId = id;
+    document.querySelector("#memoryDetailName").textContent = backup.name;
+    const body = document.querySelector("#memoryDetailBody");
+    body.replaceChildren();
+    body.append(createElement("p", "memory-detail-copy", backup.description || "无备注"));
+    const summary = createElement("div", "memory-detail-summary");
+    summary.append(
+      createElement("span", "", `创建 ${formatDateTime(backup.created_at)}`),
+      createElement("span", "", `最新版本 ${backup.latest_version || "—"}`),
+      createElement("span", "", `${backup.versions.length} 个版本`),
+    );
+    body.append(summary);
+    const versions = createElement("div", "memory-version-list");
+    backup.versions.forEach((version) => {
+      const row = createElement("div", "memory-version-row");
+      const info = createElement("div");
+      info.append(createElement("strong", "", `v${version.version}`), createElement("small", "", `${version.archive_format} · ${formatSize(version.size_bytes)} · 上传 ${formatDateTime(version.uploaded_at)} · 下载 ${version.download_count} 次`));
+      const hash = createElement("code", "memory-version-hash", `SHA-256 ${version.sha256}`);
+      hash.title = version.sha256;
+      info.append(hash);
+      const download = createElement("a", "memory-download", "下载");
+      download.href = version.download_url;
+      download.download = version.original_filename;
+      row.append(info, download);
+      versions.append(row);
+    });
+    body.append(versions);
+    memoryDetailDialog.showModal();
+  } catch (error) {
+    toast("获取记忆备份失败", error.message, "error");
+  }
+}
+
+function closeMemoryDetail() {
+  state.activeMemoryBackupId = null;
+  if (memoryDetailDialog.open) memoryDetailDialog.close();
+}
+
+async function deleteMemoryBackup() {
+  if (!state.activeMemoryBackupId) return;
+  const backup = state.memoryBackups.find((item) => item.id === state.activeMemoryBackupId);
+  if (!backup || !window.confirm(`确定删除“${backup.name}”及全部版本吗？`)) return;
+  const button = document.querySelector("#memoryDeleteButton");
+  setLoading(button, true);
+  try {
+    await api(`/api/memory-backups/${encodeURIComponent(state.activeMemoryBackupId)}`, { method: "DELETE" });
+    closeMemoryDetail();
+    await loadSnapshot();
+    toast("记忆备份已删除", "全部版本和压缩包文件已同步清理。");
+  } catch (error) {
+    toast("删除失败", error.message, "error");
+  } finally {
+    setLoading(button, false);
+  }
 }
 
 function renderSkills() {
@@ -1875,6 +2082,43 @@ apiKeyPermissionForm.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#skillUploadOpen").addEventListener("click", () => openSkillUpload());
+document.querySelector("#memoryUploadOpen").addEventListener("click", () => openMemoryUpload());
+document.querySelector("#memoryRefreshButton").addEventListener("click", async (event) => {
+  setLoading(event.currentTarget, true);
+  try {
+    await loadSnapshot();
+    toast("记忆备份已刷新", "已同步最新的版本列表。");
+  } catch (error) {
+    toast("刷新失败", error.message, "error");
+  } finally {
+    setLoading(event.currentTarget, false);
+  }
+});
+memoryUploadForm.addEventListener("submit", uploadMemoryBackup);
+document.querySelector("#memoryPackageInput").addEventListener("change", () => {
+  const file = memoryUploadForm.elements.package.files[0];
+  if (file && file.size > 100 * 1024 * 1024) {
+    memoryUploadForm.elements.package.value = "";
+    showFormError(memoryUploadForm, "请选择不超过 100 MB 的压缩包。");
+  } else {
+    clearFormError(memoryUploadForm);
+  }
+  updateMemoryFileZone();
+});
+document.querySelectorAll("[data-close-memory-upload]").forEach((button) => button.addEventListener("click", closeMemoryUpload));
+document.querySelectorAll("[data-close-memory-detail]").forEach((button) => button.addEventListener("click", closeMemoryDetail));
+memoryUploadDialog.addEventListener("click", (event) => {
+  if (event.target === memoryUploadDialog) closeMemoryUpload();
+});
+memoryDetailDialog.addEventListener("click", (event) => {
+  if (event.target === memoryDetailDialog) closeMemoryDetail();
+});
+document.querySelector("#memoryAppendButton").addEventListener("click", () => {
+  const backup = state.memoryBackups.find((item) => item.id === state.activeMemoryBackupId);
+  closeMemoryDetail();
+  if (backup) openMemoryUpload(backup);
+});
+document.querySelector("#memoryDeleteButton").addEventListener("click", deleteMemoryBackup);
 const skillPackageInput = document.querySelector("#skillPackageInput");
 const skillFileDropzone = document.querySelector("#skillFileDropzone");
 skillPackageInput.addEventListener("change", () => {

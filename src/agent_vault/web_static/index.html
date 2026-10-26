@@ -121,6 +121,11 @@
           <span>Skill 仓库</span>
           <b id="navSkillCount">0</b>
         </button>
+        <button class="nav-item" data-section="memory">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5Z"></path><path d="M8 12h8M8 15h5"></path></svg>
+          <span>记忆备份</span>
+          <b id="navMemoryCount">0</b>
+        </button>
         <button class="nav-item" data-section="settings">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4.5 20a7.5 7.5 0 0 1 15 0"></path></svg>
           <span>个人中心</span>
@@ -278,6 +283,22 @@
           <div class="skill-hero glass"><div class="skill-hero__glyph">✦</div><div><strong>一次上传，到处可用</strong><p>Skill 包按分类与版本保存；Agent 可用 API Key 查看元信息并按需下载。</p></div><span>SKILL LIBRARY</span></div>
           <div class="skill-toolbar"><div id="skillCategoryStrip" class="category-strip" role="group" aria-label="按分类筛选 Skill"></div><button id="skillCategoryOpen" class="ghost-outline-button" type="button">＋ 新建分类</button></div>
           <div id="skillList" class="skill-grid"></div>
+        </div>
+
+        <div id="memorySection" class="page-section">
+          <div class="page-title-row">
+            <div><span class="section-kicker">AGENT MEMORY</span><h1>记忆备份</h1><p>按版本归档记忆压缩包，查看摘要并保持可恢复。</p></div>
+            <div class="page-title-actions">
+              <button id="memoryRefreshButton" class="ghost-outline-button" type="button"><span>↻</span> 刷新</button>
+              <button id="memoryUploadOpen" class="secondary-button" type="button"><span>＋</span> 上传备份</button>
+            </div>
+          </div>
+          <div class="memory-hero glass">
+            <div class="memory-hero__glyph">✦</div>
+            <div><strong>备份以压缩包形式保存</strong><p>支持 ZIP、TAR、7z 和 RAR，版本拥有独立的 SHA-256 和下载次数。服务端不会自动解压。</p></div>
+            <span>VERSIONED ARCHIVE</span>
+          </div>
+          <div id="memoryBackupList" class="memory-grid"></div>
         </div>
 
         <div id="settingsSection" class="page-section">
@@ -486,6 +507,28 @@
       <div class="modal-head"><div class="modal-icon modal-icon--mint">▤</div><div><span>READ ONLY · 只读</span><h2 id="skillPreviewTitle">SKILL.md 预览</h2></div><button type="button" class="icon-button" data-close-skill-dialog aria-label="关闭预览">×</button></div>
       <div class="modal-body"><p id="skillPreviewInfo" class="skill-preview-info"></p><p id="skillPreviewStatus" role="status"></p><article id="skillPreviewContent" class="skill-preview-content" tabindex="0" aria-label="SKILL.md 只读内容"></article></div>
       <div class="modal-foot"><button type="button" class="primary-button" data-close-skill-dialog>关闭预览</button></div>
+    </article>
+  </dialog>
+
+  <dialog id="memoryUploadDialog" class="modal memory-upload-dialog">
+    <form id="memoryUploadForm" novalidate autocomplete="off">
+      <div class="modal-head"><div class="modal-icon modal-icon--mint">✦</div><div><span id="memoryUploadKicker">NEW MEMORY BACKUP</span><h2 id="memoryUploadTitle">上传记忆备份</h2></div><button type="button" class="icon-button" data-close-memory-upload aria-label="关闭">×</button></div>
+      <div class="modal-body memory-upload-fields">
+        <label class="field"><span>备份名称 <b>必填</b></span><span class="input-wrap"><input name="name" maxlength="120" placeholder="例如 Codex memory" required></span></label>
+        <label class="field"><span>版本号 <b>必填</b></span><span class="input-wrap"><input name="version" maxlength="64" value="2026.10.27" pattern="[A-Za-z0-9][A-Za-z0-9._+\-]*" required></span></label>
+        <label class="field field--wide"><span>备注</span><span class="input-wrap"><textarea name="description" rows="3" maxlength="500" placeholder="例如 daily backup"></textarea></span></label>
+        <label class="field field--wide"><span>记忆压缩包 <b>最大 100 MB</b></span><span id="memoryFileDropzone" class="memory-file"><input id="memoryPackageInput" name="package" type="file" accept=".zip,.tar,.gz,.bz2,.xz,.7z,.rar,application/zip,application/x-tar,application/gzip,application/x-7z-compressed,application/vnd.rar" required><span class="memory-file__icon" aria-hidden="true">✦</span><span class="memory-file__copy"><strong id="memoryFileTitle">把压缩包拖到这里</strong><small id="memoryFileSubtitle">或点击选择 ZIP / TAR / 7z / RAR</small></span><span id="memoryFileAction" class="memory-file__action">选择文件 <span>↗</span></span></span><small class="memory-file__hint">压缩包会在上传前检查格式和文件路径，不会在服务端自动解压。</small></label>
+        <p class="form-message field--wide" data-form-error data-memory-upload-error role="alert"></p>
+      </div>
+      <div class="modal-foot"><button type="button" class="ghost-button" data-close-memory-upload>取消</button><button class="primary-button" type="submit"><span>上传并保存</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="memoryDetailDialog" class="modal memory-detail-dialog">
+    <article>
+      <div class="modal-head"><div class="modal-icon modal-icon--blue">▤</div><div><span>MEMORY BACKUP DETAIL</span><h2 id="memoryDetailName">记忆备份</h2></div><button type="button" class="icon-button" data-close-memory-detail aria-label="关闭">×</button></div>
+      <div id="memoryDetailBody" class="modal-body"></div>
+      <div class="modal-foot"><button type="button" id="memoryDeleteButton" class="danger-button">删除备份</button><button type="button" id="memoryAppendButton" class="ghost-button">追加版本</button><button type="button" class="primary-button" data-close-memory-detail>完成</button></div>
     </article>
   </dialog>
 
