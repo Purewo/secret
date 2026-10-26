@@ -3925,6 +3925,15 @@ html:has(.api-key-permission-dialog[open]) {
   font-size: 11px;
 }
 
+.permission-memory-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.permission-memory-grid .permission-delete {
+  margin-top: 0;
+}
+
 .api-key-action-dialog {
   width: min(520px, calc(100% - 30px));
 }

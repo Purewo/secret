@@ -136,6 +136,15 @@ class ApiKeyStore:
                 raise VaultError(f"API key '{key_id}' not found.")
             if row["revoked_at"] is not None:
                 raise VaultError("API key has been revoked.")
+            try:
+                previous = json.loads(row["permissions"])
+            except (TypeError, ValueError):
+                previous = {}
+            for field in ("memory_read", "memory_upload", "memory_delete"):
+                if field in permissions:
+                    normalized[field] = bool(permissions[field])
+                elif isinstance(previous, dict) and field in previous:
+                    normalized[field] = bool(previous[field])
             connection.execute("UPDATE api_keys SET permissions = ?, updated_at = ? WHERE id = ?", (json.dumps(normalized, separators=(",", ":")), utc_now(), key_id))
             return self._public(connection.execute("SELECT * FROM api_keys WHERE id = ?", (key_id,)).fetchone())
 

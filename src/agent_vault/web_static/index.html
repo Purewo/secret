@@ -312,7 +312,7 @@
           </div>
           <div id="personalApiPanel" role="tabpanel" aria-labelledby="personalApiTab" hidden>
             <div class="personal-panel-head"><div><span class="section-kicker">TRUSTED AGENTS</span><h2>API 密钥</h2><p>给受信任的 Agent 一把可撤销的访问钥匙。</p></div><button class="secondary-button" data-open-api-key><span>＋</span> 新建 API Key</button></div>
-            <div class="api-key-hero"><div class="api-key-hero__icon" aria-hidden="true">⌁</div><div><strong>当前默认：无权限</strong><p>创建后在“权限管理”中分别开放秘密内容和 Skill 分类。</p></div><span class="api-key-hero__badge">LOCKED</span></div>
+            <div class="api-key-hero"><div class="api-key-hero__icon" aria-hidden="true">⌁</div><div><strong>当前默认：无权限</strong><p>创建后在“权限管理”中分别开放秘密内容、Skill 分类和 Agent 记忆权限。</p></div><span class="api-key-hero__badge">LOCKED</span></div>
             <div id="apiKeyList" class="api-key-list"></div>
           </div>
         </div>
@@ -540,6 +540,7 @@
               <div class="permission-summary-grid">
                 <div><span>保险柜</span><strong id="permissionVaultSummary">未开放</strong></div>
                 <div><span>Skill</span><strong id="permissionSkillSummary">未开放</strong></div>
+                <div><span>Agent 记忆</span><strong id="permissionMemorySummary">未开放</strong></div>
               </div>
               <p class="permission-general-rule">保存后，权限从下一次请求起生效。「全部分类」也包含未来新建的分类；新建分类和管理 API Key 仍由管理员操作。</p>
             </div>
@@ -573,6 +574,19 @@
               <div id="apiPermissionSkillCategoryList" class="permission-category-list"></div>
               <div class="permission-category-head permission-category-head--second"><span>可上传分类</span><small>上传自动包含读取</small></div>
               <div id="apiPermissionSkillUploadCategoryList" class="permission-category-list"></div>
+            </div>
+          </section>
+          <section class="permission-section permission-section--memory" data-permission-section="memory">
+            <button class="permission-section__toggle" type="button" aria-expanded="false" aria-controls="permissionMemoryBody">
+              <span class="permission-section__number">04</span><span class="permission-section__heading"><strong>Agent 记忆</strong><small>备份读取、上传与删除</small></span><span class="permission-section__arrow" aria-hidden="true">⌄</span>
+            </button>
+            <div id="permissionMemoryBody" class="permission-section__body" hidden>
+              <p class="permission-lead">记忆备份默认关闭。开启后，Agent 才能通过专用 API 上传或下载版本化压缩包。</p>
+              <div class="permission-memory-grid">
+                <label class="permission-delete"><input id="apiPermissionMemoryRead" type="checkbox"><span><strong>允许读取</strong><small>查看备份列表、版本详情和下载文件</small></span></label>
+                <label class="permission-delete"><input id="apiPermissionMemoryUpload" type="checkbox"><span><strong>允许上传</strong><small>新建备份或追加新的版本</small></span></label>
+                <label class="permission-delete"><input id="apiPermissionMemoryDelete" type="checkbox"><span><strong>允许删除</strong><small>删除备份及其全部版本</small></span></label>
+              </div>
             </div>
           </section>
         </div>

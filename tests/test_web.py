@@ -91,6 +91,18 @@ def upload_skill(address: tuple[str, int], cookie: str, csrf: str, archive: byte
     return result
 
 
+def upload_memory_backup(address: tuple[str, int], authorization: str, archive: bytes, **fields: str):
+    query = urllib.parse.urlencode(fields)
+    connection = http.client.HTTPConnection(*address, timeout=5)
+    connection.request("POST", f"/api/v1/memory-backups/upload?{query}", body=archive, headers={
+        "Content-Type": "application/octet-stream", "Authorization": authorization,
+    })
+    response = connection.getresponse()
+    result = response.status, json.loads(response.read().decode("utf-8")), response.headers
+    connection.close()
+    return result
+
+
 def test_default_web_port_is_2005() -> None:
     assert DEFAULT_PORT == 2005
 
@@ -948,3 +960,94 @@ def test_api_key_delete_entry_removes_secrets_and_syncs_local_client(vault_home,
         with pytest.raises(VaultError, match="not found"):
             client.vault.get_secret("old_password")
         assert client.vault.get_secret("keep_token")["value"] == "keep-value"
+
+
+def test_memory_backup_api_supports_permissions_versions_and_download(vault_home, fake_keyring) -> None:
+    archive = skill_zip()
+    with running_web_server() as address:
+        cookie, csrf = login(address)
+        status, created, _ = request_json(
+            address, "POST", "/api/api-keys", {"name": "memory-agent"},
+            cookie=cookie, csrf_token=csrf,
+        )
+        assert status == 201
+        key = created["api_key"]
+        bearer = f"Bearer {key['api_key']}"
+        assert request_json(address, "GET", "/api/v1/memory-backups", authorization=bearer)[0] == 403
+
+        permission_path = f"/api/api-keys/{key['id']}/permissions"
+        status, updated, _ = request_json(
+            address, "POST", permission_path,
+            {"memory_read": True, "memory_upload": True, "memory_delete": False},
+            cookie=cookie, csrf_token=csrf,
+        )
+        assert status == 200
+        assert updated["api_key"]["permissions"]["memory_upload"] is True
+
+        status, first, _ = upload_memory_backup(
+            address, bearer, archive, name="Codex memory", description="daily", version="2026.10.1", filename="memory.zip",
+        )
+        assert status == 201
+        backup = first["backup"]
+        backup_id = backup["id"]
+        assert backup["versions"][0]["archive_format"] == "zip"
+        assert backup["versions"][0]["size_bytes"] == len(archive)
+        assert request_json(address, "GET", "/api/memory-backups", authorization=bearer)[0] == 403
+        listed = request_json(address, "GET", "/api/v1/memory-backups", authorization=bearer)[1]["backups"]
+        assert listed[0]["id"] == backup_id
+
+        status, second, _ = upload_memory_backup(
+            address, bearer, archive, version="2026.10.2", backup_id=backup_id, filename="memory-v2.zip",
+        )
+        assert status == 201
+        assert [item["version"] for item in second["backup"]["versions"]] == ["2026.10.2", "2026.10.1"]
+
+        detail = request_json(address, "GET", f"/api/v1/memory-backups/{backup_id}", authorization=bearer)[1]["backup"]
+        download_path = detail["versions"][1]["download_url"]
+        connection = http.client.HTTPConnection(*address, timeout=5)
+        connection.request("GET", download_path, headers={"Authorization": bearer})
+        response = connection.getresponse()
+        body = response.read()
+        assert response.status == 200
+        assert body == archive
+        assert response.getheader("X-Content-SHA256") == detail["versions"][1]["sha256"]
+        assert "memory.zip" in (response.getheader("Content-Disposition") or "")
+        connection.close()
+
+        client = SyncClient(vault_home / "memory-client")
+        client.configure(f"http://{address[0]}:{address[1]}", key["api_key"])
+        package = vault_home / "memory-upload.zip"
+        package.write_bytes(archive)
+        uploaded = client.upload_memory_backup(
+            package, version="2026.10.3", backup_id=backup_id,
+        )
+        assert uploaded["backup"]["latest_version"] == "2026.10.3"
+        output = vault_home / "memory-download.zip"
+        result = client.download_memory_backup(backup_id, "2026.10.2", output)
+        assert result["sha256"] == detail["versions"][0]["sha256"]
+        assert output.read_bytes() == archive
+
+        assert request_json(address, "DELETE", f"/api/v1/memory-backups/{backup_id}", authorization=bearer)[0] == 403
+        request_json(
+            address, "POST", permission_path,
+            {"memory_read": True, "memory_upload": True, "memory_delete": True},
+            cookie=cookie, csrf_token=csrf,
+        )
+        assert request_json(address, "DELETE", f"/api/v1/memory-backups/{backup_id}", authorization=bearer)[0] == 200
+        assert request_json(address, "GET", "/api/v1/memory-backups", authorization=bearer)[1]["backups"] == []
+
+
+def test_memory_backup_api_rejects_invalid_archive_and_requires_api_key(vault_home, fake_keyring) -> None:
+    with running_web_server() as address:
+        cookie, csrf = login(address)
+        assert upload_memory_backup(address, "", b"invalid", name="Bad", version="1", filename="bad.zip")[0] in (401, 403)
+        status, created, _ = request_json(address, "POST", "/api/api-keys", {"name": "memory-admin"}, cookie=cookie, csrf_token=csrf)
+        key = created["api_key"]
+        bearer = f"Bearer {key['api_key']}"
+        request_json(
+            address, "POST", f"/api/api-keys/{key['id']}/permissions",
+            {"memory_upload": True}, cookie=cookie, csrf_token=csrf,
+        )
+        status, payload, _ = upload_memory_backup(address, bearer, b"invalid", name="Bad", version="1", filename="bad.zip")
+        assert status == 400
+        assert "ZIP" in payload["error"]

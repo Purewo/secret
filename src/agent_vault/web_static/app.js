@@ -701,7 +701,13 @@ function permissionLabel(permissions) {
   const content = !permissions?.read ? "无内容权限" : `${permissions.add ? "可读 + 新增" : "只读"}${permissions.delete ? " · 可删除" : ""}`;
   const skills = permissions?.skill_categories?.length ? ` · Skill ${permissions.skill_categories.includes("__all__") ? "全部" : `${permissions.skill_categories.length} 类`}` : "";
   const uploads = permissions?.skill_upload_categories?.length ? " · 可上传" : "";
-  return content + skills + uploads;
+  const memoryCapabilities = [
+    permissions?.memory_read && "读取",
+    permissions?.memory_upload && "上传",
+    permissions?.memory_delete && "删除",
+  ].filter(Boolean);
+  const memory = memoryCapabilities.length ? ` · 记忆 ${memoryCapabilities.join(" + ")}` : "";
+  return content + skills + uploads + memory;
 }
 
 function showPermissionSection(name) {
@@ -734,6 +740,11 @@ function updatePermissionSummary() {
   const skillUploads = selected("skill_upload_categories");
   document.querySelector("#permissionSkillSummary").textContent = skillReads.length || skillUploads.length
     ? `读取 ${permissionScopeLabel(skillReads)} · 上传 ${permissionScopeLabel(skillUploads)}` : "未开放";
+  const memory = [];
+  if (document.querySelector("#apiPermissionMemoryRead")?.checked) memory.push("读取");
+  if (document.querySelector("#apiPermissionMemoryUpload")?.checked) memory.push("上传");
+  if (document.querySelector("#apiPermissionMemoryDelete")?.checked) memory.push("删除");
+  document.querySelector("#permissionMemorySummary").textContent = memory.length ? memory.join(" · ") : "未开放";
 }
 
 function openApiKeyPermissionDialog(record) {
@@ -756,6 +767,9 @@ function openApiKeyPermissionDialog(record) {
     categoryList.append(label);
   });
   document.querySelector("#apiPermissionDelete").checked = Boolean(permissions.delete);
+  document.querySelector("#apiPermissionMemoryRead").checked = Boolean(permissions.memory_read);
+  document.querySelector("#apiPermissionMemoryUpload").checked = Boolean(permissions.memory_upload);
+  document.querySelector("#apiPermissionMemoryDelete").checked = Boolean(permissions.memory_delete);
   const skillOptions = [{ id: "__all__", name: "全部 Skill 分类（含未来）", skill_count: null }, ...state.skillCategories];
   for (const [containerId, field] of [["apiPermissionSkillCategoryList", "skill_categories"], ["apiPermissionSkillUploadCategoryList", "skill_upload_categories"]]) {
     const container = document.querySelector(`#${containerId}`);
@@ -1839,6 +1853,9 @@ apiKeyPermissionForm.addEventListener("submit", async (event) => {
     read: level !== "none",
     add: level === "add",
     delete: document.querySelector("#apiPermissionDelete").checked,
+    memory_read: document.querySelector("#apiPermissionMemoryRead").checked,
+    memory_upload: document.querySelector("#apiPermissionMemoryUpload").checked,
+    memory_delete: document.querySelector("#apiPermissionMemoryDelete").checked,
   };
   const button = apiKeyPermissionForm.querySelector("button[type='submit']");
   setLoading(button, true);

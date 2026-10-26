@@ -39,7 +39,7 @@ Web 页面默认只读取秘密变量的名称、标签和公开备注。登录�
 
 ## API Key 与远程 Agent
 
-管理台「个人中心」的「API 密钥」页签可以为受信任的 Agent 创建 API Key。新 Key 默认没有任何权限，管理员需要在“权限管理”中分别开放秘密内容分类和 Skill 分类。秘密内容可只读、可新增，删除权限独立配置；Skill 读取和上传也按分类分别配置。管理员可以随时通过小眼睛查看、复制或撤销。
+管理台「个人中心」的「API 密钥」页签可以为受信任的 Agent 创建 API Key。新 Key 默认没有任何权限，管理员需要在“权限管理”中分别开放秘密内容分类、Skill 分类和 Agent 记忆权限。秘密内容可只读、可新增，删除权限独立配置；Skill 读取和上传也按分类分别配置；Agent 记忆的读取、上传和删除权限独立配置。管理员可以随时通过小眼睛查看、复制或撤销。
 
 API Key 使用标准 Bearer 认证：
 
@@ -103,6 +103,22 @@ agent-vault-client skills download SKILL_ID --version 1.0.0 --out .\my-skill.zip
 agent-vault-client --profile codex skills upload .\my-skill.zip --name "My Skill" --description "简介" --version 1.0.0 --category __other__
 agent-vault-client --profile codex skills update SKILL_ID --description "通过保险柜安全管理远程服务。"
 ```
+
+## Agent 记忆备份
+
+Agent 可以通过独立的 Bearer API 上传和管理记忆备份压缩包。记忆备份保存在 `MemoryBackups/memory_backups.db` 与 `MemoryBackups/packages/`，不会写入秘密内容库或 Skill 仓库。单个压缩包最大 100 MB，支持 ZIP、TAR、TAR.GZ/TGZ、TAR.BZ2/TBZ2、TAR.XZ/TXZ、7z 和 RAR；7z/RAR 会校验文件签名后原样保存，不在服务端解压。
+
+管理员需要在 API Key 的权限管理中单独开启「Agent 记忆」读取、上传或删除权限，默认全部关闭。上传新备份时不带 `backup_id`，追加版本时带上已有的 `backup_id` 和新的 `version`：
+
+```text
+POST /api/v1/memory-backups/upload?name=Codex%20memory&description=daily&version=2026.10.1&filename=memory.zip
+GET  /api/v1/memory-backups
+GET  /api/v1/memory-backups/{backup_id}
+GET  /api/v1/memory-backups/{backup_id}/versions/{version}/download
+DELETE /api/v1/memory-backups/{backup_id}
+```
+
+每个版本记录原始文件名、压缩格式、上传时间、文件大小、SHA-256 和下载次数。下载接口返回 `X-Content-SHA256`，客户端会自动校验文件完整性。命令行客户端对应 `agent-vault-client memory list|info|upload|download|delete`。
 
 存储上，内容数据使用 SQLite `vault.db`，秘密值仍由 Fernet 加密；API Key 使用独立的 `ApiKeys/api_keys.db` 和独立系统 keyring 密钥，绝不写入内容数据库。首次启动 SQLite 后会从旧 `vault.enc` 自动迁移，旧文件会保留作为迁移来源。
 

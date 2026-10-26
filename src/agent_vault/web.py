@@ -19,6 +19,7 @@ from typing import Any, Sequence
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from .api_keys import ApiKeyStore
+from .memory_store import MAX_PACKAGE_BYTES as MAX_MEMORY_BACKUP_BYTES, MemoryBackupStore
 from .skill_store import MAX_PACKAGE_BYTES, SkillAccessError, SkillStore
 from .storage import Vault, VaultError, utc_now
 
@@ -165,6 +166,8 @@ class VaultWebServer(ThreadingHTTPServer):
         self.api_keys = api_keys
         self.skills = SkillStore(vault.home)
         self.skills.init()
+        self.memory_backups = MemoryBackupStore(vault.home)
+        self.memory_backups.init()
         self.auth_store = WebAuthStore(vault.home, username, password)
         self.username = self.auth_store.username
         self.sessions: dict[str, WebSession] = {}
@@ -300,6 +303,31 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                     self._send_json(HTTPStatus.OK, {"skill": self.server.skills.detail(parts[0], allowed)})
                     return
                 raise ApiError(HTTPStatus.NOT_FOUND, "接口不存在。")
+            if path in ("/api/memory-backups", "/api/v1/memory-backups"):
+                principal = self._require_principal()
+                if path.startswith("/api/v1/"):
+                    self._require_api_key_principal(principal)
+                else:
+                    self._require_session_from_principal(principal)
+                self._require_memory_permission(principal, "read")
+                self._send_json(HTTPStatus.OK, {"backups": self.server.memory_backups.list_backups()})
+                return
+            if path.startswith(("/api/memory-backups/", "/api/v1/memory-backups/")):
+                principal = self._require_principal()
+                if path.startswith("/api/v1/"):
+                    self._require_api_key_principal(principal)
+                else:
+                    self._require_session_from_principal(principal)
+                self._require_memory_permission(principal, "read")
+                parts = [unquote(part) for part in path.split("/memory-backups/", 1)[1].split("/")]
+                if len(parts) == 4 and parts[1] == "versions" and parts[3] == "download":
+                    archive, digest, filename = self.server.memory_backups.download(parts[0], parts[2])
+                    self._send_memory_file(archive, digest, filename)
+                    return
+                if len(parts) == 1 and parts[0]:
+                    self._send_json(HTTPStatus.OK, {"backup": self.server.memory_backups.detail(parts[0])})
+                    return
+                raise ApiError(HTTPStatus.NOT_FOUND, "接口不存在。")
             if path.startswith("/api/"):
                 raise ApiError(HTTPStatus.NOT_FOUND, "接口不存在。")
             self._serve_static(path)
@@ -416,6 +444,9 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                     selected = payload.get(field, [])
                     if not isinstance(selected, list) or any(not isinstance(category, str) or category not in valid_skill_categories for category in selected):
                         raise ApiError(HTTPStatus.BAD_REQUEST, "包含不存在的 Skill 分类。")
+                for field in ("memory_read", "memory_upload", "memory_delete"):
+                    if field in payload and not isinstance(payload[field], bool):
+                        raise ApiError(HTTPStatus.BAD_REQUEST, "记忆备份权限必须是布尔值。")
                 updated = self.server.api_keys.update_permissions(key_id, payload)
                 self._send_json(HTTPStatus.OK, {"api_key": updated})
                 return
@@ -455,6 +486,42 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                     allowed=allowed,
                 )
                 self._send_json(HTTPStatus.CREATED, {"skill": created})
+                return
+            if path in ("/api/memory-backups/upload", "/api/v1/memory-backups/upload"):
+                if path.startswith("/api/v1/"):
+                    self._require_api_key_principal(principal)
+                else:
+                    self._require_session_from_principal(principal)
+                self._require_memory_permission(principal, "upload")
+                if self.headers.get("Content-Type", "").split(";", 1)[0].lower() not in (
+                    "application/octet-stream", "application/x-7z-compressed", "application/x-rar-compressed",
+                    "application/vnd.rar", "application/zip", "application/x-tar", "application/x-compressed-tar",
+                    "application/gzip", "application/x-gzip", "application/x-bzip", "application/x-bzip2", "application/x-xz",
+                ):
+                    raise ApiError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "请上传支持的压缩包文件。")
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError as exc:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "上传长度无效。") from exc
+                if length <= 0 or length > MAX_MEMORY_BACKUP_BYTES:
+                    raise ApiError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "记忆备份压缩包最大 100 MB。")
+                query = parse_qs(urlsplit(self.path).query)
+                value = lambda key, default="": query.get(key, [default])[0]
+                filename = value("filename") or self.headers.get("X-File-Name", "")
+                if not filename:
+                    content_disposition = self.headers.get("Content-Disposition", "")
+                    if "filename=" in content_disposition:
+                        filename = content_disposition.split("filename=", 1)[1].strip().strip('"')
+                created = self.server.memory_backups.upload(
+                    self.rfile,
+                    length,
+                    original_filename=filename,
+                    name=value("name"),
+                    description=value("description"),
+                    version=value("version"),
+                    backup_id=value("backup_id") or None,
+                )
+                self._send_json(HTTPStatus.CREATED, {"backup": created})
                 return
             if path.startswith(("/api/skills/", "/api/v1/skills/")):
                 parts = [unquote(part) for part in path.split("/skills/", 1)[1].split("/")]
@@ -588,6 +655,18 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 self._require_api_permission(principal, "delete", self._record_category(record))
                 self.server.vault.delete_secret(name)
                 self._send_json(HTTPStatus.OK, {"deleted": name})
+                return
+            if path.startswith("/api/memory-backups/") or path.startswith("/api/v1/memory-backups/"):
+                if path.startswith("/api/v1/"):
+                    self._require_api_key_principal(principal)
+                else:
+                    self._require_session_from_principal(principal)
+                self._require_memory_permission(principal, "delete")
+                backup_id = path.split("/memory-backups/", 1)[1].strip("/")
+                if not backup_id or "/" in backup_id:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "记忆备份 ID 无效。")
+                self.server.memory_backups.delete(unquote(backup_id))
+                self._send_json(HTTPStatus.OK, {"deleted": unquote(backup_id)})
                 return
             raise ApiError(HTTPStatus.NOT_FOUND, "接口不存在。")
         except ApiError as exc:
@@ -867,6 +946,18 @@ class VaultWebHandler(BaseHTTPRequestHandler):
         return allowed
 
     @staticmethod
+    def _require_memory_permission(principal: RequestPrincipal, operation: str) -> None:
+        if principal.kind == "session":
+            return
+        if principal.kind != "api_key":
+            raise ApiError(HTTPStatus.FORBIDDEN, "记忆备份接口需要管理员会话或 API Key。")
+        permissions = (principal.api_key or {}).get("permissions", {})
+        if not isinstance(permissions, dict):
+            raise ApiError(HTTPStatus.FORBIDDEN, "API key 未授权记忆备份权限。")
+        if not permissions.get(f"memory_{operation}", False):
+            raise ApiError(HTTPStatus.FORBIDDEN, f"API key 没有记忆备份{operation}权限。")
+
+    @staticmethod
     def _require_session_from_principal(principal: RequestPrincipal) -> WebSession:
         if principal.kind != "session" or principal.session is None:
             raise ApiError(HTTPStatus.FORBIDDEN, "API key 管理只能在管理员浏览器会话中执行。")
@@ -1009,6 +1100,20 @@ class VaultWebHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/zip")
         self.send_header("Content-Length", str(path.stat().st_size))
         self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+        self.send_header("X-Content-SHA256", digest)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        with path.open("rb") as archive:
+            while block := archive.read(1024 * 1024):
+                self.wfile.write(block)
+
+    def _send_memory_file(self, path: Path, digest: str, filename: str) -> None:
+        safe_filename = filename.replace('"', "_").replace("\r", "_").replace("\n", "_")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(path.stat().st_size))
+        self.send_header("Content-Disposition", f'attachment; filename="{safe_filename}"')
         self.send_header("X-Content-SHA256", digest)
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
