@@ -267,6 +267,21 @@ class AgentBackupStore:
         for row in rows:
             (self.packages / row["package_path"]).unlink(missing_ok=True)
 
+    def update_metadata(self, backup_id: str, *, name: str | None = None,
+                        description: str | None = None, owner_key_id: str | None = None) -> dict[str, Any]:
+        backup_id = self._validate_backup_id(backup_id)
+        with self._lock(), self._connect() as connection:
+            backup = self._owned_backup(connection, backup_id, owner_key_id)
+            if name is None and description is None:
+                raise VaultError("请至少提供备份名称或备注。")
+            name = backup["name"] if name is None else " ".join(name.split())
+            description = backup["description"] if description is None else " ".join(description.split())
+            if not name or len(name) > 120 or len(description) > 500:
+                raise VaultError("备份名称必填且最多 120 个字符，备注最多 500 个字符。")
+            connection.execute("UPDATE backups SET name = ?, description = ?, updated_at = ? WHERE id = ?",
+                               (name, description, utc_now(), backup_id))
+        return self.detail(backup_id, owner_key_id=owner_key_id)
+
     def bind_owner(self, backup_id: str, owner_key_id: str) -> dict[str, Any]:
         """Administrator-only migration operation; an existing owner is immutable."""
         backup_id = self._validate_backup_id(backup_id)

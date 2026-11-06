@@ -548,6 +548,18 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                     )
                 self._send_json(HTTPStatus.CREATED, {"backup": created})
                 return
+            if backup_route is not None:
+                parts = [unquote(part) for part in backup_route[1].split("/")]
+                if len(parts) == 2 and parts[0] and parts[1] == "metadata":
+                    principal, owner = self._backup_access(path, "upload")
+                    payload = self._read_json()
+                    if not payload or set(payload) - {"name", "description"}:
+                        raise ApiError(HTTPStatus.BAD_REQUEST, "仅支持更新备份名称和备注，请至少提供一项。")
+                    name = self._required_string(payload, "name", 120) if "name" in payload else None
+                    description = self._optional_string(payload, "description", 500) if "description" in payload else None
+                    updated = self.server.agent_backups.update_metadata(parts[0], name=name, description=description, owner_key_id=owner)
+                    self._send_json(HTTPStatus.OK, {"backup": updated})
+                    return
             if path.startswith(("/api/skills/", "/api/v1/skills/")):
                 parts = [unquote(part) for part in path.split("/skills/", 1)[1].split("/")]
                 if len(parts) == 2 and parts[0] and parts[1] == "metadata":

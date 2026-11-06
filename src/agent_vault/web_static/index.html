@@ -287,23 +287,14 @@
 
         <div id="memorySection" class="page-section">
           <div class="page-title-row">
-            <div><span class="section-kicker">PRIVATE AGENT SPACE</span><h1>Agent 备份</h1><p>一个 Key，一个专属空间。归档智能体的记忆、Skill 与工作空间。</p></div>
+            <div><span class="section-kicker">PRIVATE AGENT SPACE</span><h1>Agent 备份</h1><p>每位 Agent 一张备份卡片，点击管理记忆、Skill 与工作空间。</p></div>
             <div class="page-title-actions">
               <button id="memoryRefreshButton" class="ghost-outline-button" type="button"><span>↻</span> 刷新</button>
               <button id="memoryUploadOpen" class="secondary-button" type="button"><span>＋</span> 上传备份</button>
             </div>
           </div>
-          <div class="memory-hero glass">
-            <div class="memory-hero__glyph">✦</div>
-            <div><strong>空间随 Key 隔离，历史版本独立保留</strong><p>所有分区只接收 ZIP、TAR、7z 或 RAR 压缩包。其他 Key 无法访问，管理员可统一维护。</p></div>
-            <span>KEY-BOUND SPACE</span>
-          </div>
-          <div class="backup-space-toolbar">
-            <label class="field"><span>Agent 空间</span><span class="input-wrap"><select id="backupSpaceFilter" aria-label="筛选 Agent 空间"><option value="__all__">所有空间</option></select></span></label>
-            <p id="backupSpaceSummary" class="backup-space-summary"></p>
-          </div>
-          <div id="backupPartitionTabs" class="backup-partitions" aria-label="备份分区"></div>
-          <div id="memoryBackupList" class="memory-grid"></div>
+          <div class="backup-agent-toolbar"><p id="backupAgentSummary"></p><span>独立 Key 归属 · 点击卡片编辑</span></div>
+          <div id="memoryBackupList" class="entry-grid entry-grid--all backup-agent-grid"></div>
         </div>
 
         <div id="settingsSection" class="page-section">
@@ -515,6 +506,14 @@
     </article>
   </dialog>
 
+  <dialog id="backupSpaceEditorDialog" class="modal backup-space-editor">
+    <article>
+      <div class="modal-head"><div class="modal-icon modal-icon--mint">▤</div><div><span>EDIT AGENT BACKUP</span><h2 id="backupSpaceEditorTitle">Agent 备份</h2></div><button type="button" class="icon-button" data-close-backup-space aria-label="关闭 Agent 备份编辑">×</button></div>
+      <div class="modal-body"><p id="backupSpaceEditorSummary" class="backup-space-editor__summary"></p><div id="backupSpaceEditorBody"></div></div>
+      <div class="modal-foot"><button id="backupSpaceUpload" type="button" class="ghost-button">上传备份</button><button type="button" class="primary-button" data-close-backup-space>关闭</button></div>
+    </article>
+  </dialog>
+
   <dialog id="memoryUploadDialog" class="modal memory-upload-dialog">
     <form id="memoryUploadForm" novalidate autocomplete="off">
       <div class="modal-head"><div class="modal-icon modal-icon--mint">✦</div><div><span id="memoryUploadKicker">NEW AGENT BACKUP</span><h2 id="memoryUploadTitle">上传 Agent 备份</h2></div><button type="button" class="icon-button" data-close-memory-upload aria-label="关闭">×</button></div>
@@ -651,7 +650,7 @@
               <p class="permission-lead">仅限此 Key 的专属空间。开启后可管理记忆、Skill 与其他分区，无法访问其他 Key 的备份。</p>
               <div class="permission-memory-grid">
                 <label class="permission-delete"><input id="apiPermissionMemoryRead" type="checkbox"><span><strong>允许读取</strong><small>查看备份列表、版本详情和下载文件</small></span></label>
-                <label class="permission-delete"><input id="apiPermissionMemoryUpload" type="checkbox"><span><strong>允许上传</strong><small>新建备份或追加新的版本</small></span></label>
+                <label class="permission-delete"><input id="apiPermissionMemoryUpload" type="checkbox"><span><strong>允许上传</strong><small>新建备份、修改信息或追加版本</small></span></label>
                 <label class="permission-delete"><input id="apiPermissionMemoryDelete" type="checkbox"><span><strong>允许删除</strong><small>删除备份及其全部版本</small></span></label>
               </div>
             </div>

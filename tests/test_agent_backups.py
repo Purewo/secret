@@ -98,6 +98,47 @@ def test_store_isolates_owners_and_partitions(vault_home):
     assert len(store.list_backups(owner_key_id="key_lobster")) == 3
 
 
+def test_backup_metadata_edit_preserves_owner_partition_and_archive_versions(vault_home):
+    store = AgentBackupStore(vault_home)
+    store.init()
+    archive = zip_archive()
+    original = store.upload(io.BytesIO(archive), len(archive), original_filename="agent.zip", name="Before",
+                            version="1", owner_key_id="key_lobster", partition="other")
+    changed = store.update_metadata(original["id"], name="After", description="", owner_key_id="key_lobster")
+    assert changed["name"] == "After" and changed["description"] == ""
+    assert changed["owner_key_id"] == original["owner_key_id"] and changed["partition"] == "other"
+    assert changed["versions"] == original["versions"]
+    with pytest.raises(BackupNotFound):
+        store.update_metadata(original["id"], name="Foreign", owner_key_id="key_other")
+    with pytest.raises(VaultError):
+        store.update_metadata(original["id"], name=" ", owner_key_id="key_lobster")
+    assert len(list(store.packages.glob("*.archive"))) == 1
+    assert next(store.packages.glob("*.archive")).read_bytes() == archive
+
+
+def test_backup_metadata_api_requires_write_permission_owner_and_admin_csrf(vault_home, fake_keyring):
+    with running_web_server() as address:
+        cookie, csrf = login(address)
+        key, bearer = create_key(address, cookie, csrf, "Lobster")
+        _, foreign = create_key(address, cookie, csrf, "Other")
+        status, payload = upload(address, zip_archive(), bearer=bearer, filename="agent.zip", name="Original", version="1", partition="skills")
+        assert status == 201
+        original = payload["backup"]
+        path = f"/api/v1/agent-backups/{original['id']}/metadata"
+        assert request_json(address, "POST", path, {"name": "Foreign"}, authorization=foreign)[0] == 404
+        assert request_json(address, "POST", path, {"owner_key_id": "key_other"}, authorization=bearer)[0] == 400
+        status, changed, _ = request_json(address, "POST", path, {"name": "Updated", "description": "New note"}, authorization=bearer)
+        assert status == 200 and changed["backup"]["name"] == "Updated"
+        assert changed["backup"]["versions"] == original["versions"]
+        request_json(address, "POST", f"/api/api-keys/{key['id']}/permissions", {"backup_read": True, "backup_upload": False}, cookie=cookie, csrf_token=csrf)
+        assert request_json(address, "POST", path, {"name": "Denied"}, authorization=bearer)[0] == 403
+        admin_path = path.replace("/api/v1/", "/api/")
+        assert request_json(address, "POST", admin_path, {"name": "Admin"}, cookie=cookie)[0] == 403
+        status, updated, _ = request_json(address, "POST", admin_path, {"name": "Admin", "description": ""}, cookie=cookie, csrf_token=csrf)
+        assert status == 200 and updated["backup"]["name"] == "Admin" and updated["backup"]["description"] == ""
+        assert updated["backup"]["owner_key_id"] == key["id"] and updated["backup"]["partition"] == "skills"
+
+
 def test_legacy_migration_preserves_archives_and_requires_one_time_binding(vault_home):
     store, archive = legacy_backup(vault_home)
     store.init()

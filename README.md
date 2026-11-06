@@ -110,6 +110,8 @@ agent-vault-client --profile codex skills update SKILL_ID --description "通过�
 
 管理台上传弹窗同时显示三个拖放区域：选择所属 Key、填写一次备份名称和版本号后，将压缩包分别拖入对应区域即可一并上传，也可只上传部分分区。每个区域显示独立结果，部分失败时仅重试未成功的分区；追加已有备份的版本时，只更新原分区。
 
+管理台首页按 Agent 展示卡片，同一 Key 的三个分区归到一张卡片。点击卡片即可编辑已有压缩包的名称和备注、查看历史版本或追加文件；从卡片上传时自动固定所属 Key。名称和备注可独立保存，不需要重新上传，也不会改变原分区、归属和历史版本。
+
 **所有新备份必须绑定一个有效且启用的 API Key。** Agent API 只从 Bearer 认证确定归属，不接受 `owner_key_id` 参数；拥有全部分类或备份权限的其他 Key 也不能列出、读取、下载、追加或删除该空间的数据，猜中备份 ID 同样返回 404。归属与分区在追加版本时不能更改。管理员浏览器会话可以统一维护空间，上传时必须选择所属 Key。
 
 管理员在 API Key 权限管理中分别开放 `backup_read`、`backup_upload`、`backup_delete`，默认关闭。这些权限仅作用于该 Key 自己的空间。旧 `memory_read`、`memory_upload`、`memory_delete` 字段作为兼容别名保留。停用 Key 后不能再通过它访问空间，备份仍保留原归属；仍绑定备份的 Key 不能永久删除，须先由管理员清理备份。
@@ -123,6 +125,7 @@ GET    /api/v1/agent-backups/space
 GET    /api/v1/agent-backups?partition=other
 POST   /api/v1/agent-backups/upload?name=Lobster&partition=other&version=2026.11.6&filename=workspace.zip
 GET    /api/v1/agent-backups/{backup_id}
+POST   /api/v1/agent-backups/{backup_id}/metadata
 GET    /api/v1/agent-backups/{backup_id}/versions/{version}/download
 DELETE /api/v1/agent-backups/{backup_id}
 ```
