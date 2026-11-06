@@ -123,7 +123,7 @@
         </button>
         <button class="nav-item" data-section="memory">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5Z"></path><path d="M8 12h8M8 15h5"></path></svg>
-          <span>记忆备份</span>
+          <span>Agent 备份</span>
           <b id="navMemoryCount">0</b>
         </button>
         <button class="nav-item" data-section="settings">
@@ -287,7 +287,7 @@
 
         <div id="memorySection" class="page-section">
           <div class="page-title-row">
-            <div><span class="section-kicker">AGENT MEMORY</span><h1>记忆备份</h1><p>按版本归档记忆压缩包，查看摘要并保持可恢复。</p></div>
+            <div><span class="section-kicker">PRIVATE AGENT SPACE</span><h1>Agent 备份</h1><p>一个 Key，一个专属空间。归档智能体的记忆、Skill 与工作空间。</p></div>
             <div class="page-title-actions">
               <button id="memoryRefreshButton" class="ghost-outline-button" type="button"><span>↻</span> 刷新</button>
               <button id="memoryUploadOpen" class="secondary-button" type="button"><span>＋</span> 上传备份</button>
@@ -295,9 +295,14 @@
           </div>
           <div class="memory-hero glass">
             <div class="memory-hero__glyph">✦</div>
-            <div><strong>备份以压缩包形式保存</strong><p>支持 ZIP、TAR、7z 和 RAR，版本拥有独立的 SHA-256 和下载次数。服务端不会自动解压。</p></div>
-            <span>VERSIONED ARCHIVE</span>
+            <div><strong>空间随 Key 隔离，历史版本独立保留</strong><p>所有分区只接收 ZIP、TAR、7z 或 RAR 压缩包。其他 Key 无法访问，管理员可统一维护。</p></div>
+            <span>KEY-BOUND SPACE</span>
           </div>
+          <div class="backup-space-toolbar">
+            <label class="field"><span>Agent 空间</span><span class="input-wrap"><select id="backupSpaceFilter" aria-label="筛选 Agent 空间"><option value="__all__">所有空间</option></select></span></label>
+            <p id="backupSpaceSummary" class="backup-space-summary"></p>
+          </div>
+          <div id="backupPartitionTabs" class="backup-partitions" aria-label="备份分区"></div>
           <div id="memoryBackupList" class="memory-grid"></div>
         </div>
 
@@ -333,7 +338,7 @@
           </div>
           <div id="personalApiPanel" role="tabpanel" aria-labelledby="personalApiTab" hidden>
             <div class="personal-panel-head"><div><span class="section-kicker">TRUSTED AGENTS</span><h2>API 密钥</h2><p>给受信任的 Agent 一把可撤销的访问钥匙。</p></div><button class="secondary-button" data-open-api-key><span>＋</span> 新建 API Key</button></div>
-            <div class="api-key-hero"><div class="api-key-hero__icon" aria-hidden="true">⌁</div><div><strong>当前默认：无权限</strong><p>创建后在“权限管理”中分别开放秘密内容、Skill 分类和 Agent 记忆权限。</p></div><span class="api-key-hero__badge">LOCKED</span></div>
+            <div class="api-key-hero"><div class="api-key-hero__icon" aria-hidden="true">⌁</div><div><strong>当前默认：无权限</strong><p>创建后在“权限管理”中分别开放秘密内容、共享 Skill 分类和此 Key 的 Agent 备份空间。</p></div><span class="api-key-hero__badge">LOCKED</span></div>
             <div id="apiKeyList" class="api-key-list"></div>
           </div>
         </div>
@@ -512,12 +517,14 @@
 
   <dialog id="memoryUploadDialog" class="modal memory-upload-dialog">
     <form id="memoryUploadForm" novalidate autocomplete="off">
-      <div class="modal-head"><div class="modal-icon modal-icon--mint">✦</div><div><span id="memoryUploadKicker">NEW MEMORY BACKUP</span><h2 id="memoryUploadTitle">上传记忆备份</h2></div><button type="button" class="icon-button" data-close-memory-upload aria-label="关闭">×</button></div>
+      <div class="modal-head"><div class="modal-icon modal-icon--mint">✦</div><div><span id="memoryUploadKicker">NEW AGENT BACKUP</span><h2 id="memoryUploadTitle">上传 Agent 备份</h2></div><button type="button" class="icon-button" data-close-memory-upload aria-label="关闭">×</button></div>
       <div class="modal-body memory-upload-fields">
-        <label class="field"><span>备份名称 <b>必填</b></span><span class="input-wrap"><input name="name" maxlength="120" placeholder="例如 Codex memory" required></span></label>
+        <label class="field"><span>所属 Key <b>必选</b></span><span class="input-wrap"><select name="owner_key_id" required aria-label="所属 Key"></select></span><small>绑定后仅此 Key 可通过 Agent API 访问，不能更换归属。</small></label>
+        <label class="field"><span>备份分区</span><span class="input-wrap"><select name="partition" aria-label="备份分区"><option value="memory">记忆</option><option value="skills">Skill</option><option value="other">其他 · 工作空间等</option></select></span></label>
+        <label class="field"><span>备份名称 <b>必填</b></span><span class="input-wrap"><input name="name" maxlength="120" placeholder="例如 龙虾的工作空间" required></span></label>
         <label class="field"><span>版本号 <b>必填</b></span><span class="input-wrap"><input name="version" maxlength="64" value="2026.10.27" pattern="[A-Za-z0-9][A-Za-z0-9._+\-]*" required></span></label>
         <label class="field field--wide"><span>备注</span><span class="input-wrap"><textarea name="description" rows="3" maxlength="500" placeholder="例如 daily backup"></textarea></span></label>
-        <label class="field field--wide"><span>记忆压缩包 <b>最大 100 MB</b></span><span id="memoryFileDropzone" class="memory-file"><input id="memoryPackageInput" name="package" type="file" accept=".zip,.tar,.gz,.bz2,.xz,.7z,.rar,application/zip,application/x-tar,application/gzip,application/x-7z-compressed,application/vnd.rar" required><span class="memory-file__icon" aria-hidden="true">✦</span><span class="memory-file__copy"><strong id="memoryFileTitle">把压缩包拖到这里</strong><small id="memoryFileSubtitle">或点击选择 ZIP / TAR / 7z / RAR</small></span><span id="memoryFileAction" class="memory-file__action">选择文件 <span>↗</span></span></span><small class="memory-file__hint">压缩包会在上传前检查格式和文件路径，不会在服务端自动解压。</small></label>
+        <label class="field field--wide"><span>备份压缩包 <b>最大 100 MB</b></span><span id="memoryFileDropzone" class="memory-file"><input id="memoryPackageInput" name="package" type="file" accept=".zip,.tar,.gz,.bz2,.xz,.7z,.rar,application/zip,application/x-tar,application/gzip,application/x-7z-compressed,application/vnd.rar" required><span class="memory-file__icon" aria-hidden="true">✦</span><span class="memory-file__copy"><strong id="memoryFileTitle">把压缩包拖到这里</strong><small id="memoryFileSubtitle">或点击选择 ZIP / TAR / 7z / RAR</small></span><span id="memoryFileAction" class="memory-file__action">选择文件 <span>↗</span></span></span><small class="memory-file__hint">服务端校验压缩包格式与路径后保存原包，不会展开到工作目录。</small></label>
         <p class="form-message field--wide" data-form-error data-memory-upload-error role="alert"></p>
       </div>
       <div class="modal-foot"><button type="button" class="ghost-button" data-close-memory-upload>取消</button><button class="primary-button" type="submit"><span>上传并保存</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></div>
@@ -526,7 +533,7 @@
 
   <dialog id="memoryDetailDialog" class="modal memory-detail-dialog">
     <article>
-      <div class="modal-head"><div class="modal-icon modal-icon--blue">▤</div><div><span>MEMORY BACKUP DETAIL</span><h2 id="memoryDetailName">记忆备份</h2></div><button type="button" class="icon-button" data-close-memory-detail aria-label="关闭">×</button></div>
+      <div class="modal-head"><div class="modal-icon modal-icon--blue">▤</div><div><span>AGENT BACKUP DETAIL</span><h2 id="memoryDetailName">Agent 备份</h2></div><button type="button" class="icon-button" data-close-memory-detail aria-label="关闭">×</button></div>
       <div id="memoryDetailBody" class="modal-body"></div>
       <div class="modal-foot"><button type="button" id="memoryDeleteButton" class="danger-button">删除备份</button><button type="button" id="memoryAppendButton" class="ghost-button">追加版本</button><button type="button" class="primary-button" data-close-memory-detail>完成</button></div>
     </article>
@@ -583,7 +590,7 @@
               <div class="permission-summary-grid">
                 <div><span>保险柜</span><strong id="permissionVaultSummary">未开放</strong></div>
                 <div><span>Skill</span><strong id="permissionSkillSummary">未开放</strong></div>
-                <div><span>Agent 记忆</span><strong id="permissionMemorySummary">未开放</strong></div>
+                <div><span>Agent 备份空间</span><strong id="permissionMemorySummary">未开放</strong></div>
               </div>
               <p class="permission-general-rule">保存后，权限从下一次请求起生效。「全部分类」也包含未来新建的分类；新建分类和管理 API Key 仍由管理员操作。</p>
             </div>
@@ -621,10 +628,10 @@
           </section>
           <section class="permission-section permission-section--memory" data-permission-section="memory">
             <button class="permission-section__toggle" type="button" aria-expanded="false" aria-controls="permissionMemoryBody">
-              <span class="permission-section__number">04</span><span class="permission-section__heading"><strong>Agent 记忆</strong><small>备份读取、上传与删除</small></span><span class="permission-section__arrow" aria-hidden="true">⌄</span>
+              <span class="permission-section__number">04</span><span class="permission-section__heading"><strong>Agent 备份空间</strong><small>仅限此 Key 的记忆、Skill 与其他备份</small></span><span class="permission-section__arrow" aria-hidden="true">⌄</span>
             </button>
             <div id="permissionMemoryBody" class="permission-section__body" hidden>
-              <p class="permission-lead">记忆备份默认关闭。开启后，Agent 才能通过专用 API 上传或下载版本化压缩包。</p>
+              <p class="permission-lead">仅限此 Key 的专属空间。开启后可管理记忆、Skill 与其他分区，无法访问其他 Key 的备份。</p>
               <div class="permission-memory-grid">
                 <label class="permission-delete"><input id="apiPermissionMemoryRead" type="checkbox"><span><strong>允许读取</strong><small>查看备份列表、版本详情和下载文件</small></span></label>
                 <label class="permission-delete"><input id="apiPermissionMemoryUpload" type="checkbox"><span><strong>允许上传</strong><small>新建备份或追加新的版本</small></span></label>

@@ -104,21 +104,40 @@ agent-vault-client --profile codex skills upload .\my-skill.zip --name "My Skill
 agent-vault-client --profile codex skills update SKILL_ID --description "通过保险柜安全管理远程服务。"
 ```
 
-## Agent 记忆备份
+## Agent 备份空间
 
-Agent 可以通过独立的 Bearer API 上传和管理记忆备份压缩包。记忆备份保存在 `MemoryBackups/memory_backups.db` 与 `MemoryBackups/packages/`，不会写入秘密内容库或 Skill 仓库。单个压缩包最大 100 MB，支持 ZIP、TAR、TAR.GZ/TGZ、TAR.BZ2/TBZ2、TAR.XZ/TXZ、7z 和 RAR；7z/RAR 会校验文件签名后原样保存，不在服务端解压。
+每个 API Key 对应一个独立的 Agent 备份空间，内置 `memory`（记忆）、`skills`（此 Agent 私有的 Skill）和 `other`（工作空间、配置等）三个分区。每个分区可保存多个压缩包，每个备份可追加历史版本。例如，“龙虾”的记忆、技能目录和工作目录可分别打包上传到三个分区；服务端保存原包，不会采集、执行或自动恢复 Agent 文件。
 
-管理员需要在 API Key 的权限管理中单独开启「Agent 记忆」读取、上传或删除权限，默认全部关闭。上传新备份时不带 `backup_id`，追加版本时带上已有的 `backup_id` 和新的 `version`：
+**所有新备份必须绑定一个有效且启用的 API Key。** Agent API 只从 Bearer 认证确定归属，不接受 `owner_key_id` 参数；拥有全部分类或备份权限的其他 Key 也不能列出、读取、下载、追加或删除该空间的数据，猜中备份 ID 同样返回 404。归属与分区在追加版本时不能更改。管理员浏览器会话可以统一维护空间，上传时必须选择所属 Key。
+
+管理员在 API Key 权限管理中分别开放 `backup_read`、`backup_upload`、`backup_delete`，默认关闭。这些权限仅作用于该 Key 自己的空间。旧 `memory_read`、`memory_upload`、`memory_delete` 字段作为兼容别名保留。停用 Key 后不能再通过它访问空间，备份仍保留原归属；仍绑定备份的 Key 不能永久删除，须先由管理员清理备份。
+
+备份继续独立保存在 `MemoryBackups/memory_backups.db` 与 `MemoryBackups/packages/`，不进入秘密内容库或共享 Skill 仓库，也不随普通 `pull` 同步。升级会原地增加归属和分区字段，保留旧版本、文件及下载次数。无法推断所属 Key 的旧备份标为“待绑定”，仅管理员可见；管理员在版本详情中绑定一次后才对所属 Agent 开放，不能更换归属。
+
+单个压缩包最大 100 MB，所有分区均支持 ZIP、TAR、TAR.GZ/TGZ、TAR.BZ2/TBZ2、TAR.XZ/TXZ、7z 和 RAR，不要求包含 `SKILL.md`。ZIP/TAR 校验路径、链接、条目数量及展开大小；7z/RAR 校验文件签名后原样保存，不解析包内文件。每个版本记录文件名、压缩格式、上传时间、大小、SHA-256 和下载次数；客户端下载会校验 SHA-256，并拒绝覆盖已有文件。
 
 ```text
-POST /api/v1/memory-backups/upload?name=Codex%20memory&description=daily&version=2026.10.1&filename=memory.zip
-GET  /api/v1/memory-backups
-GET  /api/v1/memory-backups/{backup_id}
-GET  /api/v1/memory-backups/{backup_id}/versions/{version}/download
-DELETE /api/v1/memory-backups/{backup_id}
+GET    /api/v1/agent-backups/space
+GET    /api/v1/agent-backups?partition=other
+POST   /api/v1/agent-backups/upload?name=Lobster&partition=other&version=2026.11.6&filename=workspace.zip
+GET    /api/v1/agent-backups/{backup_id}
+GET    /api/v1/agent-backups/{backup_id}/versions/{version}/download
+DELETE /api/v1/agent-backups/{backup_id}
 ```
 
-每个版本记录原始文件名、压缩格式、上传时间、文件大小、SHA-256 和下载次数。下载接口返回 `X-Content-SHA256`，客户端会自动校验文件完整性。命令行客户端对应 `agent-vault-client memory list|info|upload|download|delete`。
+追加版本时提供 `backup_id` 与新 `version`，省略 `partition` 则沿用原分区。浏览器管理台使用 `/api/agent-backups/*` 会话接口，并可通过 `POST /api/agent-backups/{backup_id}/bind` 为旧备份绑定 Key。旧 `/api/v1/memory-backups/*` 接口保留相同的 Key 隔离规则。
+
+```powershell
+agent-vault-client --profile lobster backups space
+agent-vault-client --profile lobster backups list --partition other
+agent-vault-client --profile lobster backups upload .\memory.zip --name "龙虾记忆" --partition memory --version 2026.11.6
+agent-vault-client --profile lobster backups upload .\skills.zip --name "龙虾技能" --partition skills --version 2026.11.6
+agent-vault-client --profile lobster backups upload .\workspace.zip --name "龙虾工作空间" --partition other --version 2026.11.6
+agent-vault-client --profile lobster backups upload .\workspace-new.zip --backup-id BACKUP_ID --version 2026.11.7
+agent-vault-client --profile lobster backups download BACKUP_ID --version 2026.11.6 --out .\restore.zip
+```
+
+客户端 `memory` 命令保留为 `backups` 的兼容别名。每个 profile 需先配置对应 Agent 的 Key，配置与密钥均遵循已有独立 profile／系统 keyring 规则。
 
 存储上，内容数据使用 SQLite `vault.db`，秘密值仍由 Fernet 加密；API Key 使用独立的 `ApiKeys/api_keys.db` 和独立系统 keyring 密钥，绝不写入内容数据库。首次启动 SQLite 后会从旧 `vault.enc` 自动迁移，旧文件会保留作为迁移来源。
 

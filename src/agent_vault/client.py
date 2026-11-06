@@ -217,13 +217,17 @@ class SyncClient:
         except (OSError, json.JSONDecodeError) as exc:
             raise SyncClientError(f"Skill upload failed: {exc}") from exc
 
-    def list_memory_backups(self) -> dict[str, Any]:
-        return self._request("GET", "/api/v1/memory-backups")
+    def list_agent_backups(self, partition: str | None = None) -> dict[str, Any]:
+        query = "?" + urllib.parse.urlencode({"partition": partition}) if partition else ""
+        return self._request("GET", "/api/v1/agent-backups" + query)
 
-    def memory_backup_info(self, backup_id: str) -> dict[str, Any]:
-        return self._request("GET", f"/api/v1/memory-backups/{urllib.parse.quote(backup_id, safe='')}")
+    def agent_backup_space(self) -> dict[str, Any]:
+        return self._request("GET", "/api/v1/agent-backups/space")
 
-    def upload_memory_backup(
+    def agent_backup_info(self, backup_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/v1/agent-backups/{urllib.parse.quote(backup_id, safe='')}")
+
+    def upload_agent_backup(
         self,
         package: Path,
         *,
@@ -231,12 +235,13 @@ class SyncClient:
         name: str = "",
         description: str = "",
         backup_id: str | None = None,
+        partition: str | None = None,
     ) -> dict[str, Any]:
         package = Path(package)
         if not package.is_file():
-            raise SyncClientError("Select a memory backup archive to upload.")
+            raise SyncClientError("Select an Agent backup archive to upload.")
         if package.stat().st_size <= 0 or package.stat().st_size > 100 * 1024 * 1024:
-            raise SyncClientError("Memory backup archive must be 1 byte to 100 MB.")
+            raise SyncClientError("Agent backup archive must be 1 byte to 100 MB.")
         config = self._config_required()
         query = urllib.parse.urlencode({
             "name": name,
@@ -244,9 +249,10 @@ class SyncClient:
             "version": version,
             "backup_id": backup_id or "",
             "filename": package.name,
+            "partition": partition or "",
         })
         request = urllib.request.Request(
-            f"{config['base_url']}/api/v1/memory-backups/upload?{query}",
+            f"{config['base_url']}/api/v1/agent-backups/upload?{query}",
             data=package.read_bytes(),
             method="POST",
         )
@@ -262,13 +268,13 @@ class SyncClient:
                 message = f"HTTP {exc.code}"
             raise SyncClientError(message) from exc
         except (OSError, json.JSONDecodeError) as exc:
-            raise SyncClientError(f"Memory backup upload failed: {exc}") from exc
+            raise SyncClientError(f"Agent backup upload failed: {exc}") from exc
 
-    def download_memory_backup(self, backup_id: str, version: str | None = None, output: Path | None = None) -> dict[str, Any]:
-        detail = self.memory_backup_info(backup_id)["backup"]
+    def download_agent_backup(self, backup_id: str, version: str | None = None, output: Path | None = None) -> dict[str, Any]:
+        detail = self.agent_backup_info(backup_id)["backup"]
         selected = next((item for item in detail["versions"] if item["version"] == version), None) if version else next(iter(detail["versions"]), None)
         if selected is None:
-            raise SyncClientError("Requested memory backup version was not found.")
+            raise SyncClientError("Requested Agent backup version was not found.")
         destination = Path(output) if output is not None else Path.cwd() / selected["original_filename"]
         if destination.exists():
             raise SyncClientError(f"File already exists: {destination}")
@@ -286,7 +292,7 @@ class SyncClient:
                     digest.update(block)
             if digest.hexdigest() != selected["sha256"]:
                 destination.unlink(missing_ok=True)
-                raise SyncClientError("Memory backup checksum mismatch.")
+                raise SyncClientError("Agent backup checksum mismatch.")
         except urllib.error.HTTPError as exc:
             try:
                 message = json.loads(exc.read().decode("utf-8")).get("error", f"HTTP {exc.code}")
@@ -296,11 +302,18 @@ class SyncClient:
         except OSError as exc:
             if created:
                 destination.unlink(missing_ok=True)
-            raise SyncClientError(f"Memory backup download failed: {exc}") from exc
+            raise SyncClientError(f"Agent backup download failed: {exc}") from exc
         return {"backup_id": backup_id, "version": selected["version"], "path": str(destination), "sha256": digest.hexdigest()}
 
-    def delete_memory_backup(self, backup_id: str) -> dict[str, Any]:
-        return self._request("DELETE", f"/api/v1/memory-backups/{urllib.parse.quote(backup_id, safe='')}")
+    def delete_agent_backup(self, backup_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/api/v1/agent-backups/{urllib.parse.quote(backup_id, safe='')}")
+
+    # Compatibility for existing callers. These use exactly the same ownership checks.
+    list_memory_backups = list_agent_backups
+    memory_backup_info = agent_backup_info
+    upload_memory_backup = upload_agent_backup
+    download_memory_backup = download_agent_backup
+    delete_memory_backup = delete_agent_backup
 
     def _config(self) -> dict[str, Any]:
         if not self.config_path.exists():
@@ -383,22 +396,25 @@ def build_parser() -> argparse.ArgumentParser:
     skill_upload.add_argument("--environment", choices=("auto", "yes", "no"), default="auto")
     skill_upload.add_argument("--environment-note", default="")
     skill_upload.add_argument("--skill-id", help="Existing Skill ID when adding a version.")
-    memory = sub.add_parser("memory", help="Manage versioned Agent memory backup archives.")
+    memory = sub.add_parser("backups", aliases=["memory"], help="Manage archives in this API key's private Agent space.")
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
-    memory_sub.add_parser("list", help="List permitted memory backups.")
-    memory_info = memory_sub.add_parser("info", help="Show one memory backup and its versions.")
+    memory_list = memory_sub.add_parser("list", help="List this Agent's backup archives.")
+    memory_list.add_argument("--partition", choices=("memory", "skills", "other"))
+    memory_sub.add_parser("space", help="Show this API key's space and its three partitions.")
+    memory_info = memory_sub.add_parser("info", help="Show one Agent backup and its versions.")
     memory_info.add_argument("backup_id")
-    memory_upload = memory_sub.add_parser("upload", help="Upload a new memory backup or append a version.")
+    memory_upload = memory_sub.add_parser("upload", help="Upload a new Agent backup or append a version.")
     memory_upload.add_argument("package", type=Path)
     memory_upload.add_argument("--version", required=True)
     memory_upload.add_argument("--name", default="")
     memory_upload.add_argument("--description", default="")
     memory_upload.add_argument("--backup-id")
-    memory_download = memory_sub.add_parser("download", help="Download a memory backup and verify SHA-256.")
+    memory_upload.add_argument("--partition", choices=("memory", "skills", "other"))
+    memory_download = memory_sub.add_parser("download", help="Download an Agent backup and verify SHA-256.")
     memory_download.add_argument("backup_id")
     memory_download.add_argument("--version")
     memory_download.add_argument("--out", type=Path)
-    memory_delete = memory_sub.add_parser("delete", help="Delete a memory backup and all its versions.")
+    memory_delete = memory_sub.add_parser("delete", help="Delete an Agent backup and all its versions.")
     memory_delete.add_argument("backup_id")
     return parser
 
@@ -434,21 +450,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                     category=args.category, environment=args.environment,
                     environment_note=args.environment_note, skill_id=args.skill_id,
                 )
-        elif args.command == "memory":
+        elif args.command in ("backups", "memory"):
             if args.memory_command == "list":
-                result = client.list_memory_backups()
+                result = client.list_agent_backups(args.partition)
+            elif args.memory_command == "space":
+                result = client.agent_backup_space()
             elif args.memory_command == "info":
-                result = client.memory_backup_info(args.backup_id)
+                result = client.agent_backup_info(args.backup_id)
             elif args.memory_command == "upload":
-                result = client.upload_memory_backup(
+                result = client.upload_agent_backup(
                     args.package, version=args.version, name=args.name,
                     description=args.description, backup_id=args.backup_id,
+                    partition=args.partition,
                 )
             elif args.memory_command == "download":
-                result = client.download_memory_backup(args.backup_id, args.version, args.out)
+                result = client.download_agent_backup(args.backup_id, args.version, args.out)
             else:
-                result = client.delete_memory_backup(args.backup_id)
-        if args.command in ("skills", "memory"):
+                result = client.delete_agent_backup(args.backup_id)
+        if args.command in ("skills", "memory", "backups"):
             print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (SyncClientError, VaultError) as exc:

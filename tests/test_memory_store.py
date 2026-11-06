@@ -33,11 +33,11 @@ def test_memory_backup_uploads_versions_and_tracks_metadata(vault_home, fake_key
 
     first = zip_archive()
     created = store.upload(
-        io.BytesIO(first), len(first), original_filename="agent-memory.zip",
+        io.BytesIO(first), len(first), owner_key_id="key_agent_a", original_filename="agent-memory.zip",
         name="Codex memory", description="daily backup", version="1.0.0",
     )
     backup_id = created["id"]
-    assert backup_id.startswith("memory_")
+    assert backup_id.startswith("backup_")
     assert created["latest_version"] == "1.0.0"
     assert created["versions"][0]["size_bytes"] == len(first)
     assert created["versions"][0]["archive_format"] == "zip"
@@ -45,7 +45,7 @@ def test_memory_backup_uploads_versions_and_tracks_metadata(vault_home, fake_key
 
     second = tar_archive()
     updated = store.upload(
-        io.BytesIO(second), len(second), original_filename="agent-memory.tgz",
+        io.BytesIO(second), len(second), owner_key_id="key_agent_a", original_filename="agent-memory.tgz",
         version="1.1.0", backup_id=backup_id,
     )
     assert updated["name"] == "Codex memory"
@@ -70,7 +70,7 @@ def test_memory_backup_accepts_common_opaque_archive_formats(vault_home, fake_ke
     store = MemoryBackupStore(vault_home)
     store.init()
     result = store.upload(
-        io.BytesIO(payload), len(payload), original_filename=filename,
+        io.BytesIO(payload), len(payload), owner_key_id="key_agent_a", original_filename=filename,
         name="Opaque archive", version="1.0.0",
     )
     assert result["versions"][0]["archive_format"] == expected
@@ -81,20 +81,20 @@ def test_memory_backup_rejects_unsafe_zip_and_duplicate_version(vault_home, fake
     store.init()
     unsafe = zip_archive("../secrets.txt")
     with pytest.raises(VaultError, match="不安全"):
-        store.upload(io.BytesIO(unsafe), len(unsafe), original_filename="memory.zip", name="Unsafe", version="1")
+        store.upload(io.BytesIO(unsafe), len(unsafe), owner_key_id="key_agent_a", original_filename="memory.zip", name="Unsafe", version="1")
 
     payload = zip_archive()
-    created = store.upload(io.BytesIO(payload), len(payload), original_filename="memory.zip", name="Memory", version="1")
+    created = store.upload(io.BytesIO(payload), len(payload), owner_key_id="key_agent_a", original_filename="memory.zip", name="Memory", version="1")
     with pytest.raises(VaultError, match="版本已存在"):
-        store.upload(io.BytesIO(payload), len(payload), original_filename="memory.zip", version="1", backup_id=created["id"])
+        store.upload(io.BytesIO(payload), len(payload), owner_key_id="key_agent_a", original_filename="memory.zip", version="1", backup_id=created["id"])
 
 
 def test_memory_backup_delete_removes_all_versions(vault_home, fake_keyring) -> None:
     store = MemoryBackupStore(vault_home)
     store.init()
     payload = zip_archive()
-    created = store.upload(io.BytesIO(payload), len(payload), original_filename="memory.zip", name="Memory", version="1")
-    store.upload(io.BytesIO(payload), len(payload), original_filename="memory.zip", version="2", backup_id=created["id"])
+    created = store.upload(io.BytesIO(payload), len(payload), owner_key_id="key_agent_a", original_filename="memory.zip", name="Memory", version="1")
+    store.upload(io.BytesIO(payload), len(payload), owner_key_id="key_agent_a", original_filename="memory.zip", version="2", backup_id=created["id"])
     store.delete(created["id"])
     assert store.list_backups() == []
     with pytest.raises(VaultError, match="不存在"):

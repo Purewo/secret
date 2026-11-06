@@ -5016,6 +5016,44 @@ html:has(.api-key-permission-dialog[open]) {
   to { transform: rotate(360deg); }
 }
 
+.backup-space-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin: 26px 0 20px;
+}
+.backup-space-toolbar .field { flex: 0 1 340px; min-width: 0; }
+.backup-space-toolbar select { width: 100%; min-width: 0; }
+.backup-space-summary { flex: 1; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.backup-partitions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
+.backup-partition {
+  display: flex; align-items: center; gap: 14px; text-align: left; min-width: 0;
+  padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-md);
+  color: var(--ink); background: var(--glass); cursor: pointer; transition: background .18s, border-color .18s;
+}
+.backup-partition:hover { border-color: var(--mint-deep); }
+.backup-partition.is-active { border-color: var(--mint-deep); background: #e6f8ed; box-shadow: inset 0 0 0 1px var(--mint-deep); }
+.backup-partition__icon { color: var(--mint-deep); font-size: 25px; }
+.backup-partition__copy { display: flex; flex: 1; flex-direction: column; gap: 5px; min-width: 0; }
+.backup-partition__copy strong { font-size: 16px; }
+.backup-partition__copy small { color: var(--muted); line-height: 1.5; }
+.backup-partition__count { color: var(--mint-deep); font: 24px var(--display); }
+.backup-owner { display: inline-block; width: fit-content; max-width: 100%; margin-top: 10px; padding: 5px 10px; color: var(--mint-deep); background: #e6f8ed; border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.memory-card__foot { flex-wrap: wrap; }
+.memory-card__foot > span { flex-basis: 100%; }
+.memory-card__actions { flex-wrap: wrap; }
+.memory-card__button, .memory-card__download { white-space: nowrap; }
+.backup-bind-form { display: grid; gap: 14px; margin: 16px 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-warm); }
+.backup-bind-form select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: white; }
+.backup-bind-form button { justify-self: start; }
+.memory-upload-fields select:disabled { opacity: .7; }
+@media (max-width: 760px) {
+  .backup-space-toolbar { flex-direction: column; align-items: stretch; gap: 12px; }
+  .backup-space-toolbar .field { flex-basis: auto; }
+  .backup-partitions { grid-template-columns: 1fr; gap: 10px; }
+  .backup-partition { padding: 14px 18px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;

@@ -140,11 +140,14 @@ class ApiKeyStore:
                 previous = json.loads(row["permissions"])
             except (TypeError, ValueError):
                 previous = {}
-            for field in ("memory_read", "memory_upload", "memory_delete"):
-                if field in permissions:
-                    normalized[field] = bool(permissions[field])
-                elif isinstance(previous, dict) and field in previous:
-                    normalized[field] = bool(previous[field])
+            for operation in ("read", "upload", "delete"):
+                field, legacy = f"backup_{operation}", f"memory_{operation}"
+                if field in permissions and legacy in permissions and bool(permissions[field]) != bool(permissions[legacy]):
+                    raise VaultError("Agent 备份权限的新旧字段不能相互冲突。")
+                if field in permissions or legacy in permissions:
+                    normalized[field] = normalized[legacy] = bool(permissions.get(field, permissions.get(legacy)))
+                elif isinstance(previous, dict) and (field in previous or legacy in previous):
+                    normalized[field] = normalized[legacy] = bool(previous.get(field, previous.get(legacy)))
             connection.execute("UPDATE api_keys SET permissions = ?, updated_at = ? WHERE id = ?", (json.dumps(normalized, separators=(",", ":")), utc_now(), key_id))
             return self._public(connection.execute("SELECT * FROM api_keys WHERE id = ?", (key_id,)).fetchone())
 

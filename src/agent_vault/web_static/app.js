@@ -14,6 +14,9 @@ const state = {
   skills: [],
   skillCategories: [],
   memoryBackups: [],
+  backupSpaces: [],
+  activeBackupSpace: "__all__",
+  activeBackupPartition: "memory",
   activeSkillCategory: "__all__",
   activeSkillId: null,
   uploadSkillId: null,
@@ -31,7 +34,7 @@ const labels = {
   entries: "资源条目",
   secrets: "变量检索",
   skills: "Skill 仓库",
-  memory: "记忆备份",
+  memory: "Agent 备份",
   settings: "个人中心",
 };
 
@@ -125,6 +128,9 @@ function showLogin() {
   state.skills = [];
   state.skillCategories = [];
   state.memoryBackups = [];
+  state.backupSpaces = [];
+  state.activeBackupSpace = "__all__";
+  state.activeBackupPartition = "memory";
   resetPasswordForm();
   loginForm.elements.password.value = "";
   loginError.textContent = "";
@@ -132,6 +138,7 @@ function showLogin() {
   document.querySelector("#detailVariableList").replaceChildren();
   document.querySelector("#apiKeyList").replaceChildren();
   document.querySelector("#memoryBackupList").replaceChildren();
+  document.querySelector("#backupPartitionTabs").replaceChildren();
   document.querySelector("#secretList").replaceChildren();
   appView.hidden = true;
   loginView.hidden = false;
@@ -161,13 +168,14 @@ async function loadSnapshot() {
     api("/api/api-keys"),
     api("/api/skills"),
     api("/api/skills/categories"),
-    api("/api/memory-backups"),
+    api("/api/agent-backups"),
   ]);
   state.snapshot = snapshot;
   state.apiKeys = apiKeyPayload.api_keys || [];
   state.skills = skillPayload.skills || [];
   state.skillCategories = skillCategories.categories || [];
   state.memoryBackups = memoryPayload.backups || [];
+  state.backupSpaces = memoryPayload.spaces || [];
   renderSnapshot();
   if (!snapshot.status.ready) {
     toast("保险柜需要检查", "本地密钥或密文库状态异常。", "error");
@@ -715,11 +723,11 @@ function permissionLabel(permissions) {
   const skills = permissions?.skill_categories?.length ? ` · Skill ${permissions.skill_categories.includes("__all__") ? "全部" : `${permissions.skill_categories.length} 类`}` : "";
   const uploads = permissions?.skill_upload_categories?.length ? " · 可上传" : "";
   const memoryCapabilities = [
-    permissions?.memory_read && "读取",
-    permissions?.memory_upload && "上传",
-    permissions?.memory_delete && "删除",
+    (permissions?.backup_read ?? permissions?.memory_read) && "读取",
+    (permissions?.backup_upload ?? permissions?.memory_upload) && "上传",
+    (permissions?.backup_delete ?? permissions?.memory_delete) && "删除",
   ].filter(Boolean);
-  const memory = memoryCapabilities.length ? ` · 记忆 ${memoryCapabilities.join(" + ")}` : "";
+  const memory = memoryCapabilities.length ? ` · Agent 备份 ${memoryCapabilities.join(" + ")}` : "";
   return content + skills + uploads + memory;
 }
 
@@ -780,9 +788,9 @@ function openApiKeyPermissionDialog(record) {
     categoryList.append(label);
   });
   document.querySelector("#apiPermissionDelete").checked = Boolean(permissions.delete);
-  document.querySelector("#apiPermissionMemoryRead").checked = Boolean(permissions.memory_read);
-  document.querySelector("#apiPermissionMemoryUpload").checked = Boolean(permissions.memory_upload);
-  document.querySelector("#apiPermissionMemoryDelete").checked = Boolean(permissions.memory_delete);
+  document.querySelector("#apiPermissionMemoryRead").checked = Boolean(permissions.backup_read ?? permissions.memory_read);
+  document.querySelector("#apiPermissionMemoryUpload").checked = Boolean(permissions.backup_upload ?? permissions.memory_upload);
+  document.querySelector("#apiPermissionMemoryDelete").checked = Boolean(permissions.backup_delete ?? permissions.memory_delete);
   const skillOptions = [{ id: "__all__", name: "全部 Skill 分类（含未来）", skill_count: null }, ...state.skillCategories];
   for (const [containerId, field] of [["apiPermissionSkillCategoryList", "skill_categories"], ["apiPermissionSkillUploadCategoryList", "skill_upload_categories"]]) {
     const container = document.querySelector(`#${containerId}`);
@@ -830,19 +838,69 @@ function formatDateTime(value) {
 }
 
 function memoryDownloadUrl(backupId, version) {
-  return `/api/memory-backups/${encodeURIComponent(backupId)}/versions/${encodeURIComponent(version)}/download`;
+  return `/api/agent-backups/${encodeURIComponent(backupId)}/versions/${encodeURIComponent(version)}/download`;
+}
+
+const backupPartitions = {
+  memory: { name: "记忆", icon: "▤", description: "长期记忆、会话与偏好" },
+  skills: { name: "Skill", icon: "◈", description: "此 Agent 私有的技能压缩包" },
+  other: { name: "其他", icon: "⌂", description: "工作空间、配置与其他文件" },
+};
+
+function backupOwnerName(ownerKeyId) {
+  return state.backupSpaces.find((space) => space.owner_key_id === ownerKeyId)?.name || ownerKeyId || "待绑定的旧备份";
+}
+
+function backupOwnerMatches(backup) {
+  return state.activeBackupSpace === "__all__" || (backup.owner_key_id || "__unbound__") === state.activeBackupSpace;
+}
+
+function renderBackupSpaceNavigation() {
+  const select = document.querySelector("#backupSpaceFilter");
+  if (state.activeBackupSpace !== "__all__" && !state.backupSpaces.some((space) => space.owner_key_id === state.activeBackupSpace)) {
+    state.activeBackupSpace = "__all__";
+  }
+  select.replaceChildren(new Option("所有空间", "__all__"));
+  state.backupSpaces.forEach((space) => {
+    const suffix = space.status === "revoked" ? " · 已停用" : "";
+    select.append(new Option(`${space.name}${suffix} · ${space.archive_count} 个备份`, space.owner_key_id));
+  });
+  select.value = state.activeBackupSpace;
+  const owned = state.memoryBackups.filter(backupOwnerMatches);
+  document.querySelector("#backupSpaceSummary").textContent = state.activeBackupSpace === "__unbound__"
+    ? "旧备份尚未记录所属 Key。请在版本详情中绑定，Agent 暂时无法访问。"
+    : `${state.activeBackupSpace === "__all__" ? `${state.backupSpaces.filter((space) => space.status !== "unbound").length} 个独立空间` : backupOwnerName(state.activeBackupSpace)} · ${owned.length} 个压缩包备份 · 每个空间仅对所属 Key 开放`;
+  const tabs = document.querySelector("#backupPartitionTabs");
+  tabs.replaceChildren();
+  Object.entries(backupPartitions).forEach(([partition, info]) => {
+    const button = createElement("button", "backup-partition");
+    button.type = "button";
+    button.classList.toggle("is-active", state.activeBackupPartition === partition);
+    button.setAttribute("aria-pressed", String(state.activeBackupPartition === partition));
+    button.append(createElement("span", "backup-partition__icon", info.icon));
+    const copy = createElement("span", "backup-partition__copy");
+    copy.append(createElement("strong", "", info.name), createElement("small", "", info.description));
+    button.append(copy, createElement("span", "backup-partition__count", String(owned.filter((backup) => backup.partition === partition).length)));
+    button.addEventListener("click", () => {
+      state.activeBackupPartition = partition;
+      renderMemoryBackups();
+    });
+    tabs.append(button);
+  });
 }
 
 function renderMemoryBackups() {
   const list = document.querySelector("#memoryBackupList");
   if (!list) return;
   list.replaceChildren();
-  if (!state.memoryBackups.length) {
+  renderBackupSpaceNavigation();
+  const visible = state.memoryBackups.filter((backup) => backupOwnerMatches(backup) && backup.partition === state.activeBackupPartition);
+  if (!visible.length) {
     const empty = createElement("div", "memory-empty glass");
     empty.append(
       createElement("span", "memory-empty__icon", "✦"),
-      createElement("strong", "", "还没有记忆备份"),
-      createElement("p", "", "上传一个压缩包，把 Codex 或其他运行环境的记忆保存下来。"),
+      createElement("strong", "", `还没有${backupPartitions[state.activeBackupPartition].name}备份`),
+      createElement("p", "", "选择所属 Key，上传压缩包。每个版本会记录摘要、大小和上传时间。"),
     );
     const button = createElement("button", "secondary-button", "＋ 上传备份");
     button.type = "button";
@@ -852,13 +910,15 @@ function renderMemoryBackups() {
     return;
   }
 
-  state.memoryBackups.forEach((backup) => {
+  visible.forEach((backup) => {
     const latest = backup.latest || {};
     const card = createElement("article", "memory-card glass");
     const top = createElement("div", "memory-card__top");
     top.append(createElement("span", "memory-card__glyph", "✦"));
     top.append(createElement("span", "memory-card__version", `v${latest.version || backup.latest_version || "—"}`));
     const name = createElement("h2", "", backup.name);
+    const owner = createElement("span", "backup-owner", backupOwnerName(backup.owner_key_id));
+    owner.title = backup.owner_key_id || "仅管理员可见，绑定后才对对应 Agent 开放";
     const description = createElement("p", "", backup.description || "无备注");
     const meta = createElement("div", "memory-card__meta");
     meta.append(
@@ -868,7 +928,7 @@ function renderMemoryBackups() {
     const hash = createElement("code", "memory-card__hash", `SHA-256 ${latest.sha256 || "—"}`);
     hash.title = latest.sha256 || "";
     const foot = createElement("div", "memory-card__foot");
-    foot.append(createElement("span", "", "版本化归档"));
+    foot.append(createElement("span", "", backup.owner_key_id ? "仅所属 Key 可访问" : "待绑定 · 仅管理员可见"));
     const actions = createElement("div", "memory-card__actions");
     const detail = createElement("button", "memory-card__button", "版本详情");
     detail.type = "button";
@@ -878,18 +938,35 @@ function renderMemoryBackups() {
     download.download = `${backup.name || "memory-backup"}-${latest.version || "latest"}`;
     actions.append(detail, download);
     foot.append(actions);
-    card.append(top, name, description, meta, hash, foot);
+    card.append(top, owner, name, description, meta, hash, foot);
     list.append(card);
   });
 }
 
 function openMemoryUpload(backup = null) {
+  if (backup && !backup.owner_key_id) {
+    openMemoryDetail(backup.id);
+    return;
+  }
+  const activeSpaces = state.backupSpaces.filter((space) => space.status === "active");
+  if (!activeSpaces.length) {
+    toast("请先创建 API Key", "在个人中心创建一个 Key，再为此 Agent 上传备份。", "error");
+    navigate("settings");
+    return;
+  }
   state.uploadMemoryBackupId = backup?.id || null;
   memoryUploadForm.reset();
   clearFormError(memoryUploadForm);
+  const ownerSelect = memoryUploadForm.elements.owner_key_id;
+  ownerSelect.replaceChildren(new Option("选择此 Agent 专属的 Key", ""));
+  activeSpaces.forEach((space) => ownerSelect.append(new Option(`${space.name} · ${space.owner_key_id}`, space.owner_key_id)));
+  ownerSelect.value = backup?.owner_key_id || (state.activeBackupSpace === "__all__" ? "" : state.activeBackupSpace);
+  ownerSelect.disabled = Boolean(backup);
+  memoryUploadForm.elements.partition.value = backup?.partition || state.activeBackupPartition;
+  memoryUploadForm.elements.partition.disabled = Boolean(backup);
   memoryUploadForm.elements.name.required = !backup;
-  document.querySelector("#memoryUploadTitle").textContent = backup ? "追加记忆版本" : "上传记忆备份";
-  document.querySelector("#memoryUploadKicker").textContent = backup ? "APPEND MEMORY VERSION" : "NEW MEMORY BACKUP";
+  document.querySelector("#memoryUploadTitle").textContent = backup ? "追加备份版本" : "上传 Agent 备份";
+  document.querySelector("#memoryUploadKicker").textContent = backup ? "APPEND BACKUP VERSION" : "NEW AGENT BACKUP";
   if (backup) {
     memoryUploadForm.elements.name.value = backup.name || "";
     memoryUploadForm.elements.description.value = backup.description || "";
@@ -933,9 +1010,11 @@ async function uploadMemoryBackup(event) {
       description: memoryUploadForm.elements.description.value.trim(),
       version: memoryUploadForm.elements.version.value.trim(),
       filename: file.name,
+      owner_key_id: memoryUploadForm.elements.owner_key_id.value,
+      partition: memoryUploadForm.elements.partition.value,
     });
     if (state.uploadMemoryBackupId) query.set("backup_id", state.uploadMemoryBackupId);
-    const response = await fetch(`/api/memory-backups/upload?${query.toString()}`, {
+    const response = await fetch(`/api/agent-backups/upload?${query.toString()}`, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": file.type || "application/octet-stream", "X-CSRF-Token": state.csrfToken },
@@ -944,9 +1023,11 @@ async function uploadMemoryBackup(event) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `上传失败（${response.status}）`);
     const uploaded = payload.backup;
+    state.activeBackupSpace = uploaded.owner_key_id;
+    state.activeBackupPartition = uploaded.partition;
     closeMemoryUpload();
     await loadSnapshot();
-    toast("记忆备份已上传", `v${uploaded.latest_version} 已写入版本列表。`);
+    toast("Agent 备份已上传", `v${uploaded.latest_version} 已写入版本列表。`);
     await openMemoryDetail(uploaded.id);
   } catch (error) {
     showFormError(memoryUploadForm, error.message);
@@ -957,7 +1038,7 @@ async function uploadMemoryBackup(event) {
 
 async function openMemoryDetail(id) {
   try {
-    const { backup } = await api(`/api/memory-backups/${encodeURIComponent(id)}`);
+    const { backup } = await api(`/api/agent-backups/${encodeURIComponent(id)}`);
     state.activeMemoryBackupId = id;
     document.querySelector("#memoryDetailName").textContent = backup.name;
     const body = document.querySelector("#memoryDetailBody");
@@ -965,11 +1046,42 @@ async function openMemoryDetail(id) {
     body.append(createElement("p", "memory-detail-copy", backup.description || "无备注"));
     const summary = createElement("div", "memory-detail-summary");
     summary.append(
+      createElement("span", "", `所属空间 ${backupOwnerName(backup.owner_key_id)}`),
+      createElement("span", "", `分区 ${backupPartitions[backup.partition].name}`),
       createElement("span", "", `创建 ${formatDateTime(backup.created_at)}`),
       createElement("span", "", `最新版本 ${backup.latest_version || "—"}`),
       createElement("span", "", `${backup.versions.length} 个版本`),
     );
     body.append(summary);
+    document.querySelector("#memoryAppendButton").hidden = !backup.owner_key_id;
+    if (!backup.owner_key_id) {
+      const form = createElement("form", "backup-bind-form");
+      const label = createElement("label", "field");
+      label.append(createElement("span", "", "为旧备份绑定所属 Key（绑定后不能更换）"));
+      const select = createElement("select");
+      select.id = "backupBindOwner";
+      select.required = true;
+      select.append(new Option("选择所属 Key", ""));
+      state.backupSpaces.filter((space) => space.status === "active").forEach((space) => select.append(new Option(space.name, space.owner_key_id)));
+      label.append(select);
+      const button = createElement("button", "secondary-button", "绑定空间");
+      button.type = "submit";
+      form.append(label, button);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+        setLoading(button, true);
+        try {
+          await api(`/api/agent-backups/${encodeURIComponent(id)}/bind`, { method: "POST", body: JSON.stringify({ owner_key_id: select.value }) });
+          await loadSnapshot();
+          await openMemoryDetail(id);
+          toast("归属已绑定", "仅此 Key 可以通过 Agent API 访问该备份。");
+        } catch (error) {
+          toast("绑定失败", error.message, "error");
+        } finally { setLoading(button, false); }
+      });
+      body.append(form);
+    }
     const versions = createElement("div", "memory-version-list");
     backup.versions.forEach((version) => {
       const row = createElement("div", "memory-version-row");
@@ -979,7 +1091,7 @@ async function openMemoryDetail(id) {
       hash.title = version.sha256;
       info.append(hash);
       const download = createElement("a", "memory-download", "下载");
-      download.href = version.download_url;
+      download.href = memoryDownloadUrl(backup.id, version.version);
       download.download = version.original_filename;
       row.append(info, download);
       versions.append(row);
@@ -987,7 +1099,7 @@ async function openMemoryDetail(id) {
     body.append(versions);
     memoryDetailDialog.showModal();
   } catch (error) {
-    toast("获取记忆备份失败", error.message, "error");
+    toast("获取 Agent 备份失败", error.message, "error");
   }
 }
 
@@ -1003,10 +1115,10 @@ async function deleteMemoryBackup() {
   const button = document.querySelector("#memoryDeleteButton");
   setLoading(button, true);
   try {
-    await api(`/api/memory-backups/${encodeURIComponent(state.activeMemoryBackupId)}`, { method: "DELETE" });
+    await api(`/api/agent-backups/${encodeURIComponent(state.activeMemoryBackupId)}`, { method: "DELETE" });
     closeMemoryDetail();
     await loadSnapshot();
-    toast("记忆备份已删除", "全部版本和压缩包文件已同步清理。");
+    toast("Agent 备份已删除", "全部版本和压缩包文件已同步清理。");
   } catch (error) {
     toast("删除失败", error.message, "error");
   } finally {
@@ -2060,9 +2172,9 @@ apiKeyPermissionForm.addEventListener("submit", async (event) => {
     read: level !== "none",
     add: level === "add",
     delete: document.querySelector("#apiPermissionDelete").checked,
-    memory_read: document.querySelector("#apiPermissionMemoryRead").checked,
-    memory_upload: document.querySelector("#apiPermissionMemoryUpload").checked,
-    memory_delete: document.querySelector("#apiPermissionMemoryDelete").checked,
+    backup_read: document.querySelector("#apiPermissionMemoryRead").checked,
+    backup_upload: document.querySelector("#apiPermissionMemoryUpload").checked,
+    backup_delete: document.querySelector("#apiPermissionMemoryDelete").checked,
   };
   const button = apiKeyPermissionForm.querySelector("button[type='submit']");
   setLoading(button, true);
@@ -2083,11 +2195,15 @@ apiKeyPermissionForm.addEventListener("submit", async (event) => {
 
 document.querySelector("#skillUploadOpen").addEventListener("click", () => openSkillUpload());
 document.querySelector("#memoryUploadOpen").addEventListener("click", () => openMemoryUpload());
+document.querySelector("#backupSpaceFilter").addEventListener("change", (event) => {
+  state.activeBackupSpace = event.target.value;
+  renderMemoryBackups();
+});
 document.querySelector("#memoryRefreshButton").addEventListener("click", async (event) => {
   setLoading(event.currentTarget, true);
   try {
     await loadSnapshot();
-    toast("记忆备份已刷新", "已同步最新的版本列表。");
+    toast("Agent 备份已刷新", "已同步最新的版本列表。");
   } catch (error) {
     toast("刷新失败", error.message, "error");
   } finally {

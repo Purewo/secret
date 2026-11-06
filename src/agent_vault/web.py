@@ -19,7 +19,7 @@ from typing import Any, Sequence
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from .api_keys import ApiKeyStore
-from .memory_store import MAX_PACKAGE_BYTES as MAX_MEMORY_BACKUP_BYTES, MemoryBackupStore
+from .memory_store import MAX_PACKAGE_BYTES as MAX_MEMORY_BACKUP_BYTES, AgentBackupStore, BackupNotFound, PARTITIONS
 from .skill_store import MAX_PACKAGE_BYTES, SkillAccessError, SkillStore
 from .storage import Vault, VaultError, utc_now
 
@@ -166,13 +166,14 @@ class VaultWebServer(ThreadingHTTPServer):
         self.api_keys = api_keys
         self.skills = SkillStore(vault.home)
         self.skills.init()
-        self.memory_backups = MemoryBackupStore(vault.home)
-        self.memory_backups.init()
+        self.agent_backups = AgentBackupStore(vault.home)
+        self.agent_backups.init()
         self.auth_store = WebAuthStore(vault.home, username, password)
         self.username = self.auth_store.username
         self.sessions: dict[str, WebSession] = {}
         self.failed_logins: dict[str, list[float]] = {}
         self.state_lock = threading.RLock()
+        self.backup_owner_lock = threading.RLock()
         super().__init__(server_address, VaultWebHandler)
 
     def login_allowed(self, client_ip: str) -> bool:
@@ -303,29 +304,37 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                     self._send_json(HTTPStatus.OK, {"skill": self.server.skills.detail(parts[0], allowed)})
                     return
                 raise ApiError(HTTPStatus.NOT_FOUND, "接口不存在。")
-            if path in ("/api/memory-backups", "/api/v1/memory-backups"):
-                principal = self._require_principal()
-                if path.startswith("/api/v1/"):
-                    self._require_api_key_principal(principal)
-                else:
-                    self._require_session_from_principal(principal)
-                self._require_memory_permission(principal, "read")
-                self._send_json(HTTPStatus.OK, {"backups": self.server.memory_backups.list_backups()})
-                return
-            if path.startswith(("/api/memory-backups/", "/api/v1/memory-backups/")):
-                principal = self._require_principal()
-                if path.startswith("/api/v1/"):
-                    self._require_api_key_principal(principal)
-                else:
-                    self._require_session_from_principal(principal)
-                self._require_memory_permission(principal, "read")
-                parts = [unquote(part) for part in path.split("/memory-backups/", 1)[1].split("/")]
+            backup_route = self._backup_route(path)
+            if backup_route is not None:
+                principal, owner = self._backup_access(path, "read")
+                query = parse_qs(urlsplit(self.path).query)
+                if principal.kind == "api_key" and "owner_key_id" in query:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "Agent 空间归属由认证 Key 决定。")
+                if principal.kind == "session":
+                    owner = query.get("owner_key_id", [None])[0]
+                tail = backup_route[1]
+                if tail in ("", "space", "spaces"):
+                    payload = {"backups": self.server.agent_backups.list_backups(
+                        owner_key_id=owner if owner != "__unbound__" else None,
+                        partition=query.get("partition", [None])[0], unbound_only=owner == "__unbound__",
+                    ), "partitions": PARTITIONS}
+                    if principal.kind == "session":
+                        payload["spaces"] = self._backup_spaces()
+                    else:
+                        payload["space"] = {"owner_key_id": owner, "name": principal.api_key["name"]}
+                    self._send_json(HTTPStatus.OK, payload)
+                    return
+                parts = [unquote(part) for part in tail.split("/")]
                 if len(parts) == 4 and parts[1] == "versions" and parts[3] == "download":
-                    archive, digest, filename = self.server.memory_backups.download(parts[0], parts[2])
+                    archive, digest, filename = self.server.agent_backups.download(parts[0], parts[2], owner_key_id=owner)
                     self._send_memory_file(archive, digest, filename)
                     return
                 if len(parts) == 1 and parts[0]:
-                    self._send_json(HTTPStatus.OK, {"backup": self.server.memory_backups.detail(parts[0])})
+                    backup = self.server.agent_backups.detail(parts[0], owner_key_id=owner)
+                    if principal.kind == "session":
+                        for version in backup["versions"]:
+                            version["download_url"] = version["download_url"].replace("/api/v1/", "/api/", 1)
+                    self._send_json(HTTPStatus.OK, {"backup": backup})
                     return
                 raise ApiError(HTTPStatus.NOT_FOUND, "接口不存在。")
             if path.startswith("/api/"):
@@ -335,6 +344,8 @@ class VaultWebHandler(BaseHTTPRequestHandler):
             self._send_json(exc.status, {"error": exc.message})
         except SkillAccessError as exc:
             self._send_json(HTTPStatus.FORBIDDEN, {"error": str(exc)})
+        except BackupNotFound as exc:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
         except VaultError as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except BrokenPipeError:
@@ -444,9 +455,9 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                     selected = payload.get(field, [])
                     if not isinstance(selected, list) or any(not isinstance(category, str) or category not in valid_skill_categories for category in selected):
                         raise ApiError(HTTPStatus.BAD_REQUEST, "包含不存在的 Skill 分类。")
-                for field in ("memory_read", "memory_upload", "memory_delete"):
+                for field in ("memory_read", "memory_upload", "memory_delete", "backup_read", "backup_upload", "backup_delete"):
                     if field in payload and not isinstance(payload[field], bool):
-                        raise ApiError(HTTPStatus.BAD_REQUEST, "记忆备份权限必须是布尔值。")
+                        raise ApiError(HTTPStatus.BAD_REQUEST, "Agent 备份权限必须是布尔值。")
                 updated = self.server.api_keys.update_permissions(key_id, payload)
                 self._send_json(HTTPStatus.OK, {"api_key": updated})
                 return
@@ -487,12 +498,19 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 )
                 self._send_json(HTTPStatus.CREATED, {"skill": created})
                 return
-            if path in ("/api/memory-backups/upload", "/api/v1/memory-backups/upload"):
-                if path.startswith("/api/v1/"):
-                    self._require_api_key_principal(principal)
-                else:
-                    self._require_session_from_principal(principal)
-                self._require_memory_permission(principal, "upload")
+            backup_route = self._backup_route(path)
+            if backup_route is not None and backup_route[1].endswith("/bind"):
+                self._require_session_from_principal(principal)
+                backup_id = unquote(backup_route[1][:-len("/bind")])
+                payload = self._read_json()
+                owner = self._required_string(payload, "owner_key_id", 90)
+                with self.server.backup_owner_lock:
+                    self._active_backup_key(owner)
+                    backup = self.server.agent_backups.bind_owner(backup_id, owner)
+                self._send_json(HTTPStatus.OK, {"backup": backup})
+                return
+            if backup_route is not None and backup_route[1] == "upload":
+                principal, owner = self._backup_access(path, "upload")
                 if self.headers.get("Content-Type", "").split(";", 1)[0].lower() not in (
                     "application/octet-stream", "application/x-7z-compressed", "application/x-rar-compressed",
                     "application/vnd.rar", "application/zip", "application/x-tar", "application/x-compressed-tar",
@@ -504,23 +522,30 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 except ValueError as exc:
                     raise ApiError(HTTPStatus.BAD_REQUEST, "上传长度无效。") from exc
                 if length <= 0 or length > MAX_MEMORY_BACKUP_BYTES:
-                    raise ApiError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "记忆备份压缩包最大 100 MB。")
+                    raise ApiError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Agent 备份压缩包最大 100 MB。")
                 query = parse_qs(urlsplit(self.path).query)
                 value = lambda key, default="": query.get(key, [default])[0]
+                if principal.kind == "api_key" and "owner_key_id" in query:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "Agent 空间归属由认证 Key 决定。")
+                if principal.kind == "session":
+                    owner = value("owner_key_id")
+                    if not owner and value("backup_id"):
+                        owner = self.server.agent_backups.detail(value("backup_id"))["owner_key_id"]
+                    if not owner:
+                        raise ApiError(HTTPStatus.BAD_REQUEST, "请先为备份选择所属 Key；旧备份须先绑定。")
                 filename = value("filename") or self.headers.get("X-File-Name", "")
                 if not filename:
                     content_disposition = self.headers.get("Content-Disposition", "")
                     if "filename=" in content_disposition:
                         filename = content_disposition.split("filename=", 1)[1].strip().strip('"')
-                created = self.server.memory_backups.upload(
-                    self.rfile,
-                    length,
-                    original_filename=filename,
-                    name=value("name"),
-                    description=value("description"),
-                    version=value("version"),
-                    backup_id=value("backup_id") or None,
-                )
+                with self.server.backup_owner_lock:
+                    self._active_backup_key(owner)
+                    created = self.server.agent_backups.upload(
+                        self.rfile, length, original_filename=filename,
+                        name=value("name"), description=value("description"), version=value("version"),
+                        backup_id=value("backup_id") or None, owner_key_id=owner,
+                        partition=value("partition") or None,
+                    )
                 self._send_json(HTTPStatus.CREATED, {"backup": created})
                 return
             if path.startswith(("/api/skills/", "/api/v1/skills/")):
@@ -607,6 +632,8 @@ class VaultWebHandler(BaseHTTPRequestHandler):
             self._send_json(exc.status, {"error": exc.message})
         except SkillAccessError as exc:
             self._send_json(HTTPStatus.FORBIDDEN, {"error": str(exc)})
+        except BackupNotFound as exc:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
         except VaultError as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except BrokenPipeError:
@@ -622,7 +649,10 @@ class VaultWebHandler(BaseHTTPRequestHandler):
             if path.startswith("/api/api-keys/"):
                 self._require_session_from_principal(principal)
                 key_id = path[len("/api/api-keys/") :].strip("/")
-                self.server.api_keys.delete(key_id)
+                with self.server.backup_owner_lock:
+                    if self.server.agent_backups.has_backups(key_id):
+                        raise ApiError(HTTPStatus.CONFLICT, "该 Key 仍绑定 Agent 备份。可停用 Key；永久删除前须先清理备份。")
+                    self.server.api_keys.delete(key_id)
                 self._send_json(HTTPStatus.OK, {"deleted": key_id})
                 return
             if path.startswith("/api/secrets/"):
@@ -656,21 +686,22 @@ class VaultWebHandler(BaseHTTPRequestHandler):
                 self.server.vault.delete_secret(name)
                 self._send_json(HTTPStatus.OK, {"deleted": name})
                 return
-            if path.startswith("/api/memory-backups/") or path.startswith("/api/v1/memory-backups/"):
-                if path.startswith("/api/v1/"):
-                    self._require_api_key_principal(principal)
-                else:
-                    self._require_session_from_principal(principal)
-                self._require_memory_permission(principal, "delete")
-                backup_id = path.split("/memory-backups/", 1)[1].strip("/")
+            backup_route = self._backup_route(path)
+            if backup_route is not None:
+                principal, owner = self._backup_access(path, "delete")
+                if principal.session is not None:
+                    self._require_csrf(principal.session)
+                backup_id = backup_route[1]
                 if not backup_id or "/" in backup_id:
-                    raise ApiError(HTTPStatus.BAD_REQUEST, "记忆备份 ID 无效。")
-                self.server.memory_backups.delete(unquote(backup_id))
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "Agent 备份 ID 无效。")
+                self.server.agent_backups.delete(unquote(backup_id), owner_key_id=owner)
                 self._send_json(HTTPStatus.OK, {"deleted": unquote(backup_id)})
                 return
             raise ApiError(HTTPStatus.NOT_FOUND, "接口不存在。")
         except ApiError as exc:
             self._send_json(exc.status, {"error": exc.message})
+        except BackupNotFound as exc:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
         except VaultError as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except BrokenPipeError:
@@ -946,16 +977,49 @@ class VaultWebHandler(BaseHTTPRequestHandler):
         return allowed
 
     @staticmethod
-    def _require_memory_permission(principal: RequestPrincipal, operation: str) -> None:
+    def _backup_route(path: str) -> tuple[str, str] | None:
+        for prefix in ("/api/agent-backups", "/api/v1/agent-backups", "/api/memory-backups", "/api/v1/memory-backups"):
+            if path == prefix or path.startswith(prefix + "/"):
+                return prefix, path[len(prefix):].lstrip("/")
+        return None
+
+    def _backup_access(self, path: str, operation: str) -> tuple[RequestPrincipal, str | None]:
+        principal = self._require_principal()
+        if path.startswith("/api/v1/"):
+            self._require_api_key_principal(principal)
+        else:
+            self._require_session_from_principal(principal)
+        self._require_backup_permission(principal, operation)
+        return principal, principal.subject if principal.kind == "api_key" else None
+
+    def _active_backup_key(self, owner: str) -> None:
+        if not any(key["id"] == owner and key["status"] == "active" for key in self.server.api_keys.list()):
+            raise ApiError(HTTPStatus.BAD_REQUEST, "请选择一个有效且启用的 API Key。")
+
+    def _backup_spaces(self) -> list[dict[str, Any]]:
+        backups = self.server.agent_backups.list_backups()
+        spaces = [{"owner_key_id": key["id"], "name": key["name"], "status": key["status"]}
+                  for key in self.server.api_keys.list()]
+        if any(backup["owner_key_id"] is None for backup in backups):
+            spaces.append({"owner_key_id": "__unbound__", "name": "待绑定的旧备份", "status": "unbound"})
+        for space in spaces:
+            owned = [backup for backup in backups if (backup["owner_key_id"] or "__unbound__") == space["owner_key_id"]]
+            space["archive_count"] = len(owned)
+            space["partitions"] = {partition: sum(backup["partition"] == partition for backup in owned)
+                                   for partition in PARTITIONS}
+        return spaces
+
+    @staticmethod
+    def _require_backup_permission(principal: RequestPrincipal, operation: str) -> None:
         if principal.kind == "session":
             return
         if principal.kind != "api_key":
-            raise ApiError(HTTPStatus.FORBIDDEN, "记忆备份接口需要管理员会话或 API Key。")
+            raise ApiError(HTTPStatus.FORBIDDEN, "Agent 备份接口需要管理员会话或 API Key。")
         permissions = (principal.api_key or {}).get("permissions", {})
         if not isinstance(permissions, dict):
-            raise ApiError(HTTPStatus.FORBIDDEN, "API key 未授权记忆备份权限。")
-        if not permissions.get(f"memory_{operation}", False):
-            raise ApiError(HTTPStatus.FORBIDDEN, f"API key 没有记忆备份{operation}权限。")
+            raise ApiError(HTTPStatus.FORBIDDEN, "API key 未授权 Agent 备份权限。")
+        if not permissions.get(f"backup_{operation}", permissions.get(f"memory_{operation}", False)):
+            raise ApiError(HTTPStatus.FORBIDDEN, f"API key 没有 Agent 备份{operation}权限。")
 
     @staticmethod
     def _require_session_from_principal(principal: RequestPrincipal) -> WebSession:
