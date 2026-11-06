@@ -21,6 +21,11 @@ const state = {
   activeSkillId: null,
   uploadSkillId: null,
   uploadMemoryBackupId: null,
+  backupUploadPartition: null,
+  backupUploadFiles: {},
+  backupUploadResults: {},
+  backupUploadMetadata: null,
+  backupUploadBusy: false,
   activeMemoryBackupId: null,
   activePermissionKeyId: null,
   pendingApiKeyAction: null,
@@ -944,6 +949,7 @@ function renderMemoryBackups() {
 }
 
 function openMemoryUpload(backup = null) {
+  if (state.backupUploadBusy) return;
   if (backup && !backup.owner_key_id) {
     openMemoryDetail(backup.id);
     return;
@@ -955,6 +961,10 @@ function openMemoryUpload(backup = null) {
     return;
   }
   state.uploadMemoryBackupId = backup?.id || null;
+  state.backupUploadPartition = backup?.partition || null;
+  state.backupUploadFiles = {};
+  state.backupUploadResults = {};
+  state.backupUploadMetadata = null;
   memoryUploadForm.reset();
   clearFormError(memoryUploadForm);
   const ownerSelect = memoryUploadForm.elements.owner_key_id;
@@ -962,9 +972,8 @@ function openMemoryUpload(backup = null) {
   activeSpaces.forEach((space) => ownerSelect.append(new Option(`${space.name} · ${space.owner_key_id}`, space.owner_key_id)));
   ownerSelect.value = backup?.owner_key_id || (state.activeBackupSpace === "__all__" ? "" : state.activeBackupSpace);
   ownerSelect.disabled = Boolean(backup);
-  memoryUploadForm.elements.partition.value = backup?.partition || state.activeBackupPartition;
-  memoryUploadForm.elements.partition.disabled = Boolean(backup);
   memoryUploadForm.elements.name.required = !backup;
+  memoryUploadForm.elements.name.maxLength = backup ? 120 : 110;
   document.querySelector("#memoryUploadTitle").textContent = backup ? "追加备份版本" : "上传 Agent 备份";
   document.querySelector("#memoryUploadKicker").textContent = backup ? "APPEND BACKUP VERSION" : "NEW AGENT BACKUP";
   if (backup) {
@@ -980,59 +989,171 @@ function openMemoryUpload(backup = null) {
 }
 
 function closeMemoryUpload() {
+  if (state.backupUploadBusy) return;
   state.uploadMemoryBackupId = null;
+  state.backupUploadPartition = null;
+  state.backupUploadFiles = {};
+  state.backupUploadResults = {};
+  state.backupUploadMetadata = null;
+  memoryUploadForm.reset();
+  updateMemoryFileZone();
   if (memoryUploadDialog.open) memoryUploadDialog.close();
 }
 
 function updateMemoryFileZone() {
-  const file = memoryUploadForm.elements.package.files[0];
-  const zone = document.querySelector("#memoryFileDropzone");
-  zone.classList.toggle("is-selected", Boolean(file));
-  document.querySelector("#memoryFileTitle").textContent = file ? file.name : "把压缩包拖到这里";
-  document.querySelector("#memoryFileSubtitle").textContent = file ? `${formatSize(file.size)} · 已选择` : "或点击选择 ZIP / TAR / 7z / RAR";
-  document.querySelector("#memoryFileAction").innerHTML = file ? "更换文件 <span>↗</span>" : "选择文件 <span>↗</span>";
+  const selected = Object.keys(state.backupUploadFiles);
+  const completed = selected.filter((partition) => state.backupUploadResults[partition]?.status === "success");
+  const failed = selected.filter((partition) => state.backupUploadResults[partition]?.status === "failed");
+  const invalid = Object.values(state.backupUploadResults).some((result) => result.status === "invalid");
+  const locked = state.backupUploadBusy || Boolean(state.backupUploadMetadata);
+  for (const name of ["name", "version", "description"]) memoryUploadForm.elements[name].disabled = locked;
+  memoryUploadForm.elements.owner_key_id.disabled = locked || Boolean(state.uploadMemoryBackupId);
+  document.querySelectorAll("[data-backup-upload-partition]").forEach((card) => {
+    const partition = card.dataset.backupUploadPartition;
+    const file = state.backupUploadFiles[partition];
+    const result = state.backupUploadResults[partition];
+    const inactive = Boolean(state.backupUploadPartition && state.backupUploadPartition !== partition);
+    const disabled = inactive || state.backupUploadBusy || result?.status === "success";
+    const input = card.querySelector("input[type='file']");
+    input.disabled = disabled;
+    card.classList.toggle("is-inactive", inactive);
+    card.classList.toggle("is-selected", Boolean(file));
+    card.classList.toggle("is-uploaded", result?.status === "success");
+    card.classList.toggle("has-error", ["invalid", "failed"].includes(result?.status));
+    card.querySelector("[data-backup-dropzone]").setAttribute("aria-disabled", String(disabled));
+    const remove = card.querySelector("[data-backup-file-remove]");
+    remove.hidden = result?.status === "success" || (!file && result?.status !== "invalid");
+    remove.disabled = disabled;
+    card.querySelector("[data-backup-file-name]").textContent = file?.name || "拖放压缩包至此";
+    card.querySelector("[data-backup-file-name]").title = file?.name || "";
+    card.querySelector("[data-backup-file-size]").textContent = file ? formatSize(file.size) : "ZIP / TAR / 7z / RAR";
+    card.querySelector("[data-backup-file-action]").textContent = inactive ? "本次不修改"
+      : result?.status === "success" ? "已保存"
+      : state.backupUploadBusy ? (file ? "上传中…" : "稍后添加")
+      : file ? "更换文件" : "或点击选择";
+    card.querySelector("[data-backup-file-status]").textContent = inactive ? "追加版本仅更新原分区"
+      : result?.status === "success" ? "✓ 上传成功"
+      : result?.status === "uploading" ? "正在上传…"
+      : result?.error || (file ? "已就绪 · 等待上传" : "未选择 · 可选");
+  });
+  document.querySelector("#backupUploadHint").textContent = state.backupUploadPartition
+    ? `当前备份属于“${backupPartitions[state.backupUploadPartition].name}”，追加版本仅更新此分区，所属 Key 保持不变。`
+    : "可同时上传三个分区，也可只选其中几个。名称会按分区区分，版本号与备注共用。";
+  document.querySelector("#backupUploadSummary").textContent = state.backupUploadBusy
+    ? `已完成 ${completed.length} / ${selected.length} 项，请等待上传结束。`
+    : invalid ? "有文件不符合要求，请更换或移除后再提交。"
+    : completed.length && completed.length === selected.length ? `${completed.length} 个分区已上传，压缩包与历史版本已保存。`
+    : failed.length ? `${completed.length} 项成功，${failed.length} 项失败。重试只上传未成功的分区。`
+    : selected.length ? `已选择 ${selected.length} 个分区 · 共 ${formatSize(selected.reduce((sum, partition) => sum + state.backupUploadFiles[partition].size, 0))}`
+    : "至少选择一个分区，每个分区一个压缩包。";
+  const button = memoryUploadForm.querySelector("button[type='submit']");
+  button.disabled = state.backupUploadBusy;
+  button.setAttribute("aria-busy", String(state.backupUploadBusy));
+  document.querySelector("#backupUploadSubmitLabel").textContent = state.backupUploadBusy ? "正在上传…"
+    : invalid ? "检查压缩包后上传"
+    : completed.length && completed.length === selected.length ? "完成"
+    : completed.length ? `重试未完成 ${selected.length - completed.length} 项`
+    : selected.length ? `上传已选 ${selected.length} 个分区` : "上传已选分区";
+  document.querySelectorAll("[data-close-memory-upload]").forEach((button) => { button.disabled = state.backupUploadBusy; });
+  document.querySelector("#backupUploadCancel").textContent = completed.length ? "关闭" : "取消";
+}
+
+function selectBackupArchive(partition, files) {
+  if (state.backupUploadBusy || state.backupUploadResults[partition]?.status === "success"
+    || (state.backupUploadPartition && state.backupUploadPartition !== partition)) return;
+  if (!files.length) return;
+  const file = files[0];
+  let error = "";
+  if (files.length !== 1) error = "每个分区只接收一个压缩包，请分别拖入。";
+  else if (file.size <= 0 || file.size > 100 * 1024 * 1024) error = "请选择 1 B 到 100 MB 的压缩包。";
+  else if (!/\.(zip|tar|tar\.gz|tgz|tar\.bz2|tbz2|tar\.xz|txz|7z|rar)$/i.test(file.name)) error = "请使用 ZIP、TAR、7z 或 RAR 压缩包。";
+  if (error) {
+    delete state.backupUploadFiles[partition];
+    state.backupUploadResults[partition] = { status: "invalid", error };
+  } else {
+    state.backupUploadFiles[partition] = file;
+    delete state.backupUploadResults[partition];
+  }
+  clearFormError(memoryUploadForm);
+  updateMemoryFileZone();
 }
 
 async function uploadMemoryBackup(event) {
   event.preventDefault();
+  if (state.backupUploadBusy) return;
   clearFormError(memoryUploadForm);
-  if (!memoryUploadForm.reportValidity()) return;
-  const file = memoryUploadForm.elements.package.files[0];
-  if (!file || file.size <= 0 || file.size > 100 * 1024 * 1024) {
-    showFormError(memoryUploadForm, "请选择 1 B 到 100 MB 的压缩包。");
+  const selected = Object.keys(state.backupUploadFiles);
+  const pending = selected.filter((partition) => state.backupUploadResults[partition]?.status !== "success");
+  const invalid = Object.values(state.backupUploadResults).some((result) => result.status === "invalid");
+  if (selected.length && !pending.length && !invalid) {
+    closeMemoryUpload();
     return;
   }
-  const button = memoryUploadForm.querySelector("button[type='submit']");
-  setLoading(button, true);
+  if (!memoryUploadForm.reportValidity()) return;
+  if (invalid) {
+    showFormError(memoryUploadForm, "请更换或移除不符合要求的压缩包。");
+    return;
+  }
+  if (!pending.length) {
+    showFormError(memoryUploadForm, "请至少向一个分区添加压缩包。");
+    return;
+  }
+  const metadata = state.backupUploadMetadata || {
+    name: memoryUploadForm.elements.name.value.trim(),
+    description: memoryUploadForm.elements.description.value.trim(),
+    version: memoryUploadForm.elements.version.value.trim(),
+    owner_key_id: memoryUploadForm.elements.owner_key_id.value,
+    backup_id: state.uploadMemoryBackupId,
+  };
+  if ((!metadata.name && !metadata.backup_id) || !metadata.version) {
+    showFormError(memoryUploadForm, "请填写备份名称和版本号。");
+    return;
+  }
+  state.backupUploadBusy = true;
+  updateMemoryFileZone();
   try {
-    const query = new URLSearchParams({
-      name: memoryUploadForm.elements.name.value.trim(),
-      description: memoryUploadForm.elements.description.value.trim(),
-      version: memoryUploadForm.elements.version.value.trim(),
-      filename: file.name,
-      owner_key_id: memoryUploadForm.elements.owner_key_id.value,
-      partition: memoryUploadForm.elements.partition.value,
-    });
-    if (state.uploadMemoryBackupId) query.set("backup_id", state.uploadMemoryBackupId);
-    const response = await fetch(`/api/agent-backups/upload?${query.toString()}`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": file.type || "application/octet-stream", "X-CSRF-Token": state.csrfToken },
-      body: file,
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || `上传失败（${response.status}）`);
-    const uploaded = payload.backup;
-    state.activeBackupSpace = uploaded.owner_key_id;
-    state.activeBackupPartition = uploaded.partition;
-    closeMemoryUpload();
-    await loadSnapshot();
-    toast("Agent 备份已上传", `v${uploaded.latest_version} 已写入版本列表。`);
-    await openMemoryDetail(uploaded.id);
+    const outcomes = await Promise.allSettled(pending.map(async (partition) => {
+      const file = state.backupUploadFiles[partition];
+      state.backupUploadResults[partition] = { status: "uploading" };
+      updateMemoryFileZone();
+      try {
+        const query = new URLSearchParams({
+          name: metadata.backup_id ? metadata.name : `${metadata.name} · ${backupPartitions[partition].name}`,
+          description: metadata.description, version: metadata.version,
+          filename: file.name, owner_key_id: metadata.owner_key_id, partition,
+        });
+        if (metadata.backup_id) query.set("backup_id", metadata.backup_id);
+        const response = await fetch(`/api/agent-backups/upload?${query.toString()}`, {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/octet-stream", "X-CSRF-Token": state.csrfToken },
+          body: file,
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `上传失败（${response.status}）`);
+        if (!payload.backup?.id) throw new Error("上传结果未确认，请先核对备份列表。");
+        state.backupUploadMetadata = metadata;
+        state.backupUploadResults[partition] = { status: "success", backup: payload.backup };
+        return payload.backup;
+      } catch (error) {
+        state.backupUploadResults[partition] = { status: "failed", error: error.message || "上传失败，请重试。" };
+        throw error;
+      } finally { updateMemoryFileZone(); }
+    }));
+    const uploaded = outcomes.filter((result) => result.status === "fulfilled").map((result) => result.value);
+    if (uploaded.length) {
+      state.activeBackupSpace = metadata.owner_key_id;
+      state.activeBackupPartition = uploaded[0].partition;
+      try { await loadSnapshot(); }
+      catch { showFormError(memoryUploadForm, "压缩包已上传，但列表刷新失败。请稍后刷新，已成功的分区无需重传。"); }
+    }
+    if (outcomes.some((result) => result.status === "rejected")) {
+      showFormError(memoryUploadForm, "部分分区未上传成功，请查看各区域的结果。重试不会重复上传已成功的分区。");
+    }
   } catch (error) {
     showFormError(memoryUploadForm, error.message);
   } finally {
-    setLoading(button, false);
+    state.backupUploadBusy = false;
+    updateMemoryFileZone();
   }
 }
 
@@ -2211,15 +2332,47 @@ document.querySelector("#memoryRefreshButton").addEventListener("click", async (
   }
 });
 memoryUploadForm.addEventListener("submit", uploadMemoryBackup);
-document.querySelector("#memoryPackageInput").addEventListener("change", () => {
-  const file = memoryUploadForm.elements.package.files[0];
-  if (file && file.size > 100 * 1024 * 1024) {
-    memoryUploadForm.elements.package.value = "";
-    showFormError(memoryUploadForm, "请选择不超过 100 MB 的压缩包。");
-  } else {
-    clearFormError(memoryUploadForm);
+document.querySelectorAll("[data-backup-upload-partition]").forEach((card) => {
+  const partition = card.dataset.backupUploadPartition;
+  const input = card.querySelector("input[type='file']");
+  const zone = card.querySelector("[data-backup-dropzone]");
+  input.addEventListener("change", () => {
+    const files = Array.from(input.files || []);
+    input.value = "";
+    selectBackupArchive(partition, files);
+  });
+  for (const eventName of ["dragenter", "dragover"]) {
+    zone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = input.disabled ? "none" : "copy";
+      if (!input.disabled) zone.classList.add("is-dragover");
+    });
   }
-  updateMemoryFileZone();
+  zone.addEventListener("dragleave", (event) => {
+    if (!zone.contains(event.relatedTarget)) zone.classList.remove("is-dragover");
+  });
+  zone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    zone.classList.remove("is-dragover");
+    selectBackupArchive(partition, Array.from(event.dataTransfer?.files || []));
+  });
+  card.querySelector("[data-backup-file-remove]").addEventListener("click", () => {
+    if (input.disabled) return;
+    delete state.backupUploadFiles[partition];
+    delete state.backupUploadResults[partition];
+    clearFormError(memoryUploadForm);
+    updateMemoryFileZone();
+  });
+});
+memoryUploadDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeMemoryUpload();
+});
+memoryUploadDialog.addEventListener("dragover", (event) => { event.preventDefault(); });
+memoryUploadDialog.addEventListener("drop", (event) => {
+  event.preventDefault();
+  if (!state.backupUploadBusy) showFormError(memoryUploadForm, "请把压缩包拖入记忆、Skill 或其他的对应区域。");
 });
 document.querySelectorAll("[data-close-memory-upload]").forEach((button) => button.addEventListener("click", closeMemoryUpload));
 document.querySelectorAll("[data-close-memory-detail]").forEach((button) => button.addEventListener("click", closeMemoryDetail));

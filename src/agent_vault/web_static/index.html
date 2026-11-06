@@ -520,14 +520,31 @@
       <div class="modal-head"><div class="modal-icon modal-icon--mint">✦</div><div><span id="memoryUploadKicker">NEW AGENT BACKUP</span><h2 id="memoryUploadTitle">上传 Agent 备份</h2></div><button type="button" class="icon-button" data-close-memory-upload aria-label="关闭">×</button></div>
       <div class="modal-body memory-upload-fields">
         <label class="field"><span>所属 Key <b>必选</b></span><span class="input-wrap"><select name="owner_key_id" required aria-label="所属 Key"></select></span><small>绑定后仅此 Key 可通过 Agent API 访问，不能更换归属。</small></label>
-        <label class="field"><span>备份分区</span><span class="input-wrap"><select name="partition" aria-label="备份分区"><option value="memory">记忆</option><option value="skills">Skill</option><option value="other">其他 · 工作空间等</option></select></span></label>
-        <label class="field"><span>备份名称 <b>必填</b></span><span class="input-wrap"><input name="name" maxlength="120" placeholder="例如 龙虾的工作空间" required></span></label>
+        <label class="field"><span>备份名称 <b>必填</b></span><span class="input-wrap"><input name="name" maxlength="110" placeholder="例如 龙虾的完整备份" required></span></label>
         <label class="field"><span>版本号 <b>必填</b></span><span class="input-wrap"><input name="version" maxlength="64" value="2026.10.27" pattern="[A-Za-z0-9][A-Za-z0-9._+\-]*" required></span></label>
-        <label class="field field--wide"><span>备注</span><span class="input-wrap"><textarea name="description" rows="3" maxlength="500" placeholder="例如 daily backup"></textarea></span></label>
-        <label class="field field--wide"><span>备份压缩包 <b>最大 100 MB</b></span><span id="memoryFileDropzone" class="memory-file"><input id="memoryPackageInput" name="package" type="file" accept=".zip,.tar,.gz,.bz2,.xz,.7z,.rar,application/zip,application/x-tar,application/gzip,application/x-7z-compressed,application/vnd.rar" required><span class="memory-file__icon" aria-hidden="true">✦</span><span class="memory-file__copy"><strong id="memoryFileTitle">把压缩包拖到这里</strong><small id="memoryFileSubtitle">或点击选择 ZIP / TAR / 7z / RAR</small></span><span id="memoryFileAction" class="memory-file__action">选择文件 <span>↗</span></span></span><small class="memory-file__hint">服务端校验压缩包格式与路径后保存原包，不会展开到工作目录。</small></label>
+        <label class="field field--wide"><span>备注 <small>选填</small></span><span class="input-wrap"><textarea name="description" rows="2" maxlength="500" placeholder="记录这次备份的内容或用途"></textarea></span></label>
+        <div class="backup-upload-heading field--wide"><div><strong>把压缩包放入对应分区</strong><p id="backupUploadHint">可同时上传三个分区，也可只选其中几个。名称会按分区区分，版本号与备注共用。</p></div><span>单包 ≤ 100 MB</span></div>
+        <div id="backupUploadZones" class="backup-upload-zones field--wide">
+          <section class="backup-upload-card" data-backup-upload-partition="memory">
+            <div class="backup-upload-card__head"><span class="backup-upload-card__icon">▤</span><div><h3>记忆</h3><p>长期记忆、会话与偏好</p></div><button type="button" class="backup-upload-remove" data-backup-file-remove="memory" aria-label="移除记忆压缩包" hidden>×</button></div>
+            <label class="backup-upload-drop" data-backup-dropzone="memory"><input name="package_memory" type="file" accept=".zip,.tar,.tar.gz,.tgz,.tar.bz2,.tbz2,.tar.xz,.txz,.7z,.rar" aria-label="选择记忆压缩包"><span class="backup-upload-drop__arrow" aria-hidden="true">↥</span><strong data-backup-file-name>拖放压缩包至此</strong><small data-backup-file-size>ZIP / TAR / 7z / RAR</small><span class="backup-upload-choose" data-backup-file-action>或点击选择</span></label>
+            <p class="backup-upload-status" data-backup-file-status role="status" aria-live="polite">未选择 · 可选</p>
+          </section>
+          <section class="backup-upload-card" data-backup-upload-partition="skills">
+            <div class="backup-upload-card__head"><span class="backup-upload-card__icon">◈</span><div><h3>Skill</h3><p>此 Agent 的私有技能</p></div><button type="button" class="backup-upload-remove" data-backup-file-remove="skills" aria-label="移除 Skill 压缩包" hidden>×</button></div>
+            <label class="backup-upload-drop" data-backup-dropzone="skills"><input name="package_skills" type="file" accept=".zip,.tar,.tar.gz,.tgz,.tar.bz2,.tbz2,.tar.xz,.txz,.7z,.rar" aria-label="选择 Skill 压缩包"><span class="backup-upload-drop__arrow" aria-hidden="true">↥</span><strong data-backup-file-name>拖放压缩包至此</strong><small data-backup-file-size>ZIP / TAR / 7z / RAR</small><span class="backup-upload-choose" data-backup-file-action>或点击选择</span></label>
+            <p class="backup-upload-status" data-backup-file-status role="status" aria-live="polite">未选择 · 可选</p>
+          </section>
+          <section class="backup-upload-card" data-backup-upload-partition="other">
+            <div class="backup-upload-card__head"><span class="backup-upload-card__icon">⌂</span><div><h3>其他</h3><p>工作空间、配置与文件</p></div><button type="button" class="backup-upload-remove" data-backup-file-remove="other" aria-label="移除其他压缩包" hidden>×</button></div>
+            <label class="backup-upload-drop" data-backup-dropzone="other"><input name="package_other" type="file" accept=".zip,.tar,.tar.gz,.tgz,.tar.bz2,.tbz2,.tar.xz,.txz,.7z,.rar" aria-label="选择其他压缩包"><span class="backup-upload-drop__arrow" aria-hidden="true">↥</span><strong data-backup-file-name>拖放压缩包至此</strong><small data-backup-file-size>ZIP / TAR / 7z / RAR</small><span class="backup-upload-choose" data-backup-file-action>或点击选择</span></label>
+            <p class="backup-upload-status" data-backup-file-status role="status" aria-live="polite">未选择 · 可选</p>
+          </section>
+        </div>
+        <p id="backupUploadSummary" class="backup-upload-summary field--wide" role="status" aria-live="polite">至少选择一个分区，每个分区一个压缩包。</p>
         <p class="form-message field--wide" data-form-error data-memory-upload-error role="alert"></p>
       </div>
-      <div class="modal-foot"><button type="button" class="ghost-button" data-close-memory-upload>取消</button><button class="primary-button" type="submit"><span>上传并保存</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></div>
+      <div class="modal-foot"><button id="backupUploadCancel" type="button" class="ghost-button" data-close-memory-upload>取消</button><button class="primary-button" type="submit"><span id="backupUploadSubmitLabel">上传已选分区</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></div>
     </form>
   </dialog>
 

@@ -108,6 +108,8 @@ agent-vault-client --profile codex skills update SKILL_ID --description "通过�
 
 每个 API Key 对应一个独立的 Agent 备份空间，内置 `memory`（记忆）、`skills`（此 Agent 私有的 Skill）和 `other`（工作空间、配置等）三个分区。每个分区可保存多个压缩包，每个备份可追加历史版本。例如，“龙虾”的记忆、技能目录和工作目录可分别打包上传到三个分区；服务端保存原包，不会采集、执行或自动恢复 Agent 文件。
 
+管理台上传弹窗同时显示三个拖放区域：选择所属 Key、填写一次备份名称和版本号后，将压缩包分别拖入对应区域即可一并上传，也可只上传部分分区。每个区域显示独立结果，部分失败时仅重试未成功的分区；追加已有备份的版本时，只更新原分区。
+
 **所有新备份必须绑定一个有效且启用的 API Key。** Agent API 只从 Bearer 认证确定归属，不接受 `owner_key_id` 参数；拥有全部分类或备份权限的其他 Key 也不能列出、读取、下载、追加或删除该空间的数据，猜中备份 ID 同样返回 404。归属与分区在追加版本时不能更改。管理员浏览器会话可以统一维护空间，上传时必须选择所属 Key。
 
 管理员在 API Key 权限管理中分别开放 `backup_read`、`backup_upload`、`backup_delete`，默认关闭。这些权限仅作用于该 Key 自己的空间。旧 `memory_read`、`memory_upload`、`memory_delete` 字段作为兼容别名保留。停用 Key 后不能再通过它访问空间，备份仍保留原归属；仍绑定备份的 Key 不能永久删除，须先由管理员清理备份。
