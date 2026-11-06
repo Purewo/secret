@@ -1,6 +1,6 @@
 ---
 name: windows-agent-vault
-description: 使用本地 Agent Vault 安全管理密码、API Key、服务器凭据、账号、Token 等敏感数据，避免暴露明文。用户提到保险柜、已保存的凭据、服务器或账号，或要求 Agent 通过变量名使用秘密时使用。
+description: 使用 Agent Vault 安全管理凭据、共享 Skill 和 Agent 专属压缩包备份。用户提到保险柜、已保存的服务器或账号、通过变量名使用秘密，或希望备份 Agent 的记忆、技能和工作空间时使用。
 ---
 
 # Windows Agent Vault
@@ -66,6 +66,22 @@ agent-vault-client --profile codex skills update SKILL_ID --description "通过�
 普通 `pull` 命令不会下载 Skill 包。下载命令会校验包的 SHA-256。安装或执行下载的 Skill 前，应先检查 `SKILL.md` 和环境依赖说明。
 
 云端 Skill 简介默认使用中文。只修改名称或简介时，使用 `skills update`，无需重新上传 ZIP 或新增版本。此操作需要该 Skill 所属分类的上传权限，仅有读取权限不够。上传新版本时，提供的名称和简介也会更新，未提供的字段保持原值。Agent 不能通过更新操作将 Skill 移动到其他分类。
+
+## Agent 专属备份空间
+
+每个 API Key 拥有独立空间，内置记忆（`memory`）、私有技能（`skills`）和其他文件（`other`，例如工作目录）三个分区。先在本地打成压缩包，再用该 Agent 自己的 profile 上传；支持 ZIP、TAR、7z、RAR，单包不超过 100 MB。
+
+```powershell
+agent-vault-client --profile lobster backups space
+agent-vault-client --profile lobster backups list --partition other
+agent-vault-client --profile lobster backups upload .\memory.zip --name "龙虾记忆" --partition memory --version 2026.11.6
+agent-vault-client --profile lobster backups upload .\skills.zip --name "龙虾技能" --partition skills --version 2026.11.6
+agent-vault-client --profile lobster backups upload .\workspace.zip --name "龙虾工作空间" --partition other --version 2026.11.6
+agent-vault-client --profile lobster backups upload .\workspace-new.zip --backup-id BACKUP_ID --version 2026.11.7
+agent-vault-client --profile lobster backups download BACKUP_ID --out .\restore.zip
+```
+
+归属由认证 Key 确定，不能改用其他 Key 读取、追加或删除。管理员需单独开放备份读取、上传、删除权限；新增版本不能更改归属或分区。下载会校验 SHA-256，且不覆盖已有文件。这里的私有 Skill 包与共享 Skill 仓库相互独立，普通 `pull` 不会同步备份。解压或恢复工作目录前应检查内容、保留现有文件，并遵循用户的恢复范围。
 
 ## 安全规则
 
