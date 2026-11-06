@@ -969,7 +969,7 @@ function openMemoryUpload(backup = null) {
   clearFormError(memoryUploadForm);
   const ownerSelect = memoryUploadForm.elements.owner_key_id;
   ownerSelect.replaceChildren(new Option("选择此 Agent 专属的 Key", ""));
-  activeSpaces.forEach((space) => ownerSelect.append(new Option(`${space.name} · ${space.owner_key_id}`, space.owner_key_id)));
+  activeSpaces.forEach((space) => ownerSelect.append(new Option(space.name, space.owner_key_id)));
   ownerSelect.value = backup?.owner_key_id || (state.activeBackupSpace === "__all__" ? "" : state.activeBackupSpace);
   ownerSelect.disabled = Boolean(backup);
   memoryUploadForm.elements.name.required = !backup;
